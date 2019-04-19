@@ -44,6 +44,17 @@
 #define VM_FAULT_WRITE       1    /* A write was attempted */
 #define VM_FAULT_READONLY    2    /* A write to a readonly page was attempted*/
 
+/* insert a page table entry that maps to the provided frame number. */
+void pagetable_insert(paddr_t **pagetable, vaddr_t vaddr, paddr_t frame_no);
+
+/* lookup page table at entry vaddr and return frame number. Return null if non exists. */
+void pagetable_lookup(paddr_t **pagetable, vaddr_t vaddr, paddr_t *frame_no);
+
+/* updates the dirty bit in order to toggle readonly and read/write entries. */
+void pagetable_update(paddr_t **pagetable, vaddr_t reg_vbase, size_t reg_npages);
+
+/* zero out a section of memory. */
+// static void as_zero_region(paddr_t paddr, unsigned npages)
 
 /* Initialization function */
 void vm_bootstrap(void);

@@ -48,6 +48,16 @@ struct vnode;
  * You write this.
  */
 
+struct region {
+        struct region *reg_next; // next region in linked list.
+        vaddr_t reg_vbase;       // virtual memory base location of region.
+        size_t reg_npages;       // size of region in pages
+        // permissions.
+        int readable;
+        int writeable;
+        int executable;
+};
+
 struct addrspace {
 #if OPT_DUMBVM
         vaddr_t as_vbase1;
@@ -58,7 +68,8 @@ struct addrspace {
         size_t as_npages2;
         paddr_t as_stackpbase;
 #else
-        /* Put stuff here for your VM system */
+        struct region *regions; // linked list of regions
+        paddr_t **pagetable;    // 2-level pagetable structure
 #endif
 };
 

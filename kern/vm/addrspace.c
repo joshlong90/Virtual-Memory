@@ -48,6 +48,7 @@
  *
  */
 
+/* Called by a new process, sets up structures necessary to represent new process. */
 struct addrspace *
 as_create(void)
 {
@@ -58,9 +59,15 @@ as_create(void)
 		return NULL;
 	}
 
-	/*
-	 * Initialize as needed.
-	 */
+	/* Initialise the regions linked list to be empty. */
+	as->regions = NULL;
+
+	/* Initialise the 2-level page table by allocating memory for the 1st level table. */
+	as->pagetable = kmalloc(TABLE_SIZE * sizeof(paddr_t *));
+	if (as->pagetable == NULL) {
+		kfree(as);
+		return NULL;
+	}
 
 	return as;
 }
@@ -78,6 +85,11 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	/*
 	 * Write this.
 	 */
+	// for each page in new copy, it needs to be mapped to its own unique copy of the data that was in the frame.
+	// called by fork. create new page table that points to new fresh frames.
+	// copy the content of all frames pointed to by the old parent page table.
+	// nested for loop two loops in a row.
+	// adds all the same regions in parent.
 
 	(void)old;
 
@@ -91,6 +103,27 @@ as_destroy(struct addrspace *as)
 	/*
 	 * Clean up as needed.
 	 */
+	// deallocate all dynamic data structures allocated in as_create().
+	int i;
+	struct region *cur_reg;
+	struct region *next_reg;
+
+	/* free all 2nd level tables in page table */
+	for (i = 0; i < PAGE_SIZE; i++) {
+		if (as->pagetable[i] != NULL) {
+			kfree(as->pagetable[i]);
+		}
+	}
+	/* free 1st level table in page table */
+	kfree(as->pagetable);
+
+	/* free all regions in linked list */
+	cur_reg = as->regions;
+	while(cur_reg != NULL) {
+		next_reg = cur_reg->reg_next;
+		kfree(cur_reg);
+		cur_reg = next_reg;
+	}
 
 	kfree(as);
 }
@@ -112,6 +145,8 @@ as_activate(void)
 	/*
 	 * Write this.
 	 */
+	// TLB flush can copy dumbvm code.
+
 }
 
 void
@@ -122,6 +157,7 @@ as_deactivate(void)
 	 * anything. See proc.c for an explanation of why it (might)
 	 * be needed.
 	 */
+	// TLB flush as in as_activate
 }
 
 /*
@@ -138,17 +174,50 @@ int
 as_define_region(struct addrspace *as, vaddr_t vaddr, size_t memsize,
 		 int readable, int writeable, int executable)
 {
+	struct region *cur_reg;
+	struct region *new_reg;
 	/*
 	 * Write this.
 	 */
 
-	(void)as;
-	(void)vaddr;
-	(void)memsize;
-	(void)readable;
-	(void)writeable;
-	(void)executable;
-	return ENOSYS; /* Unimplemented */
+	// Notes
+	// every time as_define_region is called add another node into the linked list of regions.
+	// region structure should include base, limit and permissions.
+
+	size_t npages;
+
+	/* find the base location in virtual memory for the region. */
+	memsize += vaddr & ~(vaddr_t)PAGE_FRAME;
+	vaddr &= PAGE_FRAME;
+
+	/* find the number of pages required for the region. */
+	memsize = (memsize + PAGE_SIZE - 1) & PAGE_FRAME;
+	npages = memsize / PAGE_SIZE;
+
+	/* allocate memory for new region */
+	new_reg = kmalloc(sizeof(struct region));
+	if (new_reg == NULL) {
+		return ENOMEM;
+	}
+
+	/* save new region attributes */
+	new_reg->reg_npages = npages;
+	new_reg->reg_vbase = vaddr;
+	new_reg->reg_next = NULL;
+	new_reg->writeable = writeable;
+	new_reg->readable = readable;
+	new_reg->executable = executable;
+
+	/* load the new region to the end of the linked list of regions. */
+	cur_reg = as->regions;
+	while(cur_reg != NULL) {
+		cur_reg = cur_reg->reg_next;
+	}
+	cur_reg = new_reg;
+
+	// TODO insert region into page table.
+
+	return 0;
 }
 
 int
@@ -157,6 +226,9 @@ as_prepare_load(struct addrspace *as)
 	/*
 	 * Write this.
 	 */
+	// make read only regions read/write for loading purposes.
+	// the TLB is responsible for accesses and enforcing permissions. 
+	// Make sure all loaded pages to TLB are writeable.
 
 	(void)as;
 	return 0;
@@ -168,6 +240,7 @@ as_complete_load(struct addrspace *as)
 	/*
 	 * Write this.
 	 */
+	// enforce read only again.
 
 	(void)as;
 	return 0;
@@ -180,9 +253,16 @@ as_define_stack(struct addrspace *as, vaddr_t *stackptr)
 	 * Write this.
 	 */
 
+	// Notes
+	// similar to as_define_region with one main difference, 
+	// it returns the location where the stack pointer should start at
+	// *stackptr = USERSTACK; top of the userspace.
+	// can call as_define_region with a size of 16 pages.
+
 	(void)as;
 
 	/* Initial user-level stack pointer */
+	// 16 pages allocated for the stack.
 	*stackptr = USERSTACK;
 
 	return 0;
