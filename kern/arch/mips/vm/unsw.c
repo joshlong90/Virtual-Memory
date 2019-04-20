@@ -313,7 +313,7 @@ alloc_kpages(unsigned npages)
 	return PADDR_TO_KVADDR(paddr);
 }
 
-vaddr_t
+paddr_t
 alloc_upages(unsigned npages) {
 
         paddr_t paddr;

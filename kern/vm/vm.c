@@ -5,6 +5,7 @@
 #include <addrspace.h>
 #include <vm.h>
 #include <machine/tlb.h>
+#include <spl.h>
 
 #include <proc.h>
 #include <current.h>
@@ -17,8 +18,8 @@
 void pagetable_insert(paddr_t **pagetable, vaddr_t vaddr, paddr_t entry) {
     // frame has been allocated. Insert frame number into page table.
     // frame number is expected to be paddr >> 12.
-    vaddr_t indexT1 = (vaddr >> 22) & PAGE_FRAME; // first-level table index.
-    vaddr_t indexT2 = (vaddr >> 12) & PAGE_FRAME; // second-level table index.
+    vaddr_t indexT1 = vaddr >> 22;                                 // first-level table index.
+    vaddr_t indexT2 = (vaddr >> 12) & (~(vaddr_t)PAGE_FRAME >> 2); // second-level table index.
     vaddr_t i;
 
     KASSERT(pagetable != NULL);
@@ -42,8 +43,8 @@ void pagetable_insert(paddr_t **pagetable, vaddr_t vaddr, paddr_t entry) {
  * lookup pagetable at location vaddr and return entry. Return null if non exists.
  */
 void pagetable_lookup(paddr_t **pagetable, vaddr_t vaddr, paddr_t *entry) {
-    vaddr_t indexT1 = (vaddr >> 22) & PAGE_FRAME; // first-level table index.
-    vaddr_t indexT2 = (vaddr >> 12) & PAGE_FRAME; // second-level table index.
+    vaddr_t indexT1 = vaddr >> 22; // first-level table index.
+    vaddr_t indexT2 = (vaddr >> 12) & (~(vaddr_t)PAGE_FRAME >> 2); // second-level table index.
 
     KASSERT(pagetable != NULL);
 
@@ -60,9 +61,6 @@ void pagetable_lookup(paddr_t **pagetable, vaddr_t vaddr, paddr_t *entry) {
     /* save entry in return address. */
     *entry = pagetable[indexT1][indexT2];
 
-    /* should not have entry with no permissions at frame number 0 */
-    KASSERT(*entry != 0);
-
     return;
 }
 
@@ -74,37 +72,25 @@ void pagetable_update(paddr_t **pagetable, vaddr_t reg_vbase, size_t reg_npages)
     vaddr_t indexT2;
     vaddr_t i;
     vaddr_t reg_vend = reg_vbase + reg_npages*PAGE_SIZE;
-    paddr_t entry;
 
     KASSERT(pagetable != NULL);
     KASSERT(reg_vend <= MIPS_KSEG0);
 
     for (i = reg_vbase; i < reg_vend; i = i + PAGE_SIZE) {
-        indexT1 = (i >> 22) & PAGE_FRAME;
+        indexT1 = i >> 22;
         /* if 2nd-level table does not exist simply skip to next 1st-level entry. */
         if (pagetable[indexT1] == NULL) {
-            i = i + TABLE_SIZE*PAGE_SIZE - i%(TABLE_SIZE*PAGE_SIZE) - 1;
+            i = i + TABLE_SIZE*PAGE_SIZE - i%(TABLE_SIZE*PAGE_SIZE) - PAGE_SIZE;
         } else {
-            indexT2 = (i >> 12) & PAGE_FRAME;
-            entry = pagetable[indexT1][indexT2];
+            indexT2 = (i >> 12) & (~(vaddr_t)PAGE_FRAME >> 2);
             /* if there is an entry toggle its dirty bit. */
-            if (entry != 0) {
-                entry = entry ^ TLBLO_DIRTY;
+            if (pagetable[indexT1][indexT2] != 0) {
+                pagetable[indexT1][indexT2] ^= TLBLO_DIRTY;
             }
         }
     }
     return;
 }
-
-/*
- * zeros out a region in physical memory using KSEG0 offset first.
- */
-// static void as_zero_region(paddr_t paddr, unsigned npages) {
-//     KASSERT(paddr < MIPS_KSEG0); // check that the physical address is in lower section.
-//     KASSERT(paddr != 0);         // check that the physical address is not zero.
-
-// 	bzero((void *)PADDR_TO_KVADDR(paddr), npages * PAGE_SIZE);
-// }
 
 void vm_bootstrap(void)
 {
@@ -159,8 +145,13 @@ int vm_fault(int faulttype, vaddr_t faultaddress) {
     paddr_t entry;
     pagetable_lookup(as->pagetable, faultaddress, &entry);
     if (entry != 0) {
-        panic("PTE found hasn't been written yet\n");
-        // must be retrieved from disk.
+        /* load the TLB. */
+        int spl;
+        /* Disable interrupts on this CPU while frobbing the TLB. */
+	    spl = splhigh();
+        tlb_random((uint32_t)(faultaddress & TLBHI_VPAGE), (uint32_t) entry);
+        splx(spl);
+
         return 0;
     }
 
@@ -173,10 +164,33 @@ int vm_fault(int faulttype, vaddr_t faultaddress) {
     }
 
     if (cur_reg != NULL) {
-        panic("valid region found");
-    }
+        paddr_t paddr;
+        /* allocate a new frame for the faultaddress */
+        paddr = alloc_upages(1);
 
-    panic("vm_fault hasn't been written yet\n");
+        KASSERT((paddr & ~(paddr_t)PAGE_FRAME) == 0);
+
+        /* zero fill the frame */
+        bzero((void *)paddr, PAGE_SIZE);
+
+        /* add permissions to pagetable entry */
+        paddr |= TLBLO_VALID;
+        if ((cur_reg->permissions & RF_W) != 0) {
+            paddr |= TLBLO_DIRTY;
+        }
+
+        /* place etnry in pagetable. */
+        pagetable_insert(as->pagetable, faultaddress, paddr);
+
+        /* load the TLB. */
+        int spl;
+        /* Disable interrupts on this CPU while frobbing the TLB. */
+	    spl = splhigh();
+        tlb_random((uint32_t)(faultaddress & TLBHI_VPAGE), (uint32_t) paddr);
+		splx(spl);
+
+        return 0;
+    }
 
     return EFAULT;
 
@@ -190,7 +204,6 @@ int vm_fault(int faulttype, vaddr_t faultaddress) {
 
     // tlb_random() can be used for TLB refill. Disable interrupts locally for tlb_random().
 
-    // we can access the address space through curproc->addrspace see dumbvm.c.
 }
 
 /*
