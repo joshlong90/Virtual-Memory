@@ -34,9 +34,10 @@
  * Machine-dependent VM system definitions.
  */
 
-#define PAGE_SIZE  4096         /* size of VM page */
-#define PAGE_FRAME 0xfffff000   /* mask for getting page number from addr */
-#define TABLE_SIZE 1024			/* number of entries at each page table level */
+#define PAGE_SIZE    4096         /* size of VM page */
+#define PAGE_FRAME   0xfffff000   /* mask for getting page number from addr */
+#define TABLE_SIZE   1024		  /* number of entries at each page table level */
+#define STACK_NPAGES 16			  /* size of stack in number of pages. */
 
 /*
  * MIPS-I hardwired memory layout:

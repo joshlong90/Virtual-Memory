@@ -30,10 +30,10 @@ void pagetable_insert(paddr_t **pagetable, vaddr_t vaddr, paddr_t entry) {
         for (i = 0; i < TABLE_SIZE; i++) {
             pagetable[indexT1][i] = 0;
         }
+    }
 
     /* store the entry in the page table. */
     pagetable[indexT1][indexT2] = entry;
-    }
 
     return;
 }
@@ -49,16 +49,20 @@ void pagetable_lookup(paddr_t **pagetable, vaddr_t vaddr, paddr_t *entry) {
 
     if (pagetable[indexT1] == NULL) {
         /* second-level table does not exist, therefore page table entry does not exist. */
-        entry = NULL;
+        *entry = 0;
         return;
     }
     if (pagetable[indexT1][indexT2] == 0) {
         /* page table entry does not exist. */
-        entry = NULL;
+        *entry = 0;
         return;
     }
     /* save entry in return address. */
     *entry = pagetable[indexT1][indexT2];
+
+    /* should not have entry with no permissions at frame number 0 */
+    KASSERT(*entry != 0);
+
     return;
 }
 
@@ -69,17 +73,17 @@ void pagetable_update(paddr_t **pagetable, vaddr_t reg_vbase, size_t reg_npages)
     vaddr_t indexT1;
     vaddr_t indexT2;
     vaddr_t i;
-    vaddr_t reg_vend = reg_vbase + (reg_npages << 12);
+    vaddr_t reg_vend = reg_vbase + reg_npages*PAGE_SIZE;
     paddr_t entry;
 
     KASSERT(pagetable != NULL);
     KASSERT(reg_vend <= MIPS_KSEG0);
 
-    for (i = reg_vbase; i < reg_vend; i++) {
+    for (i = reg_vbase; i < reg_vend; i = i + PAGE_SIZE) {
         indexT1 = (i >> 22) & PAGE_FRAME;
         /* if 2nd-level table does not exist simply skip to next 1st-level entry. */
         if (pagetable[indexT1] == NULL) {
-            i = i + TABLE_SIZE - i%TABLE_SIZE - 1;
+            i = i + TABLE_SIZE*PAGE_SIZE - i%(TABLE_SIZE*PAGE_SIZE) - 1;
         } else {
             indexT2 = (i >> 12) & PAGE_FRAME;
             entry = pagetable[indexT1][indexT2];
@@ -110,11 +114,67 @@ void vm_bootstrap(void)
     /* Not required to initialise frame table for this years submission. */
 }
 
-int
-vm_fault(int faulttype, vaddr_t faultaddress)
-{
-    (void) faulttype;
-    (void) faultaddress;
+/*
+ * called when faultaddress was not found in TLB.
+ * retrieves virtual memory mapping from pagetable and loads the TLB.
+ * if virtual memory mapping does not exist in pagetable it is retrieved from disk.
+ * returns EFAULT if memory reference is invalid.
+ */
+int vm_fault(int faulttype, vaddr_t faultaddress) {
+
+    switch (faulttype) {
+	    case VM_FAULT_READONLY:
+		/* Attempt to violate READONLY memory permission, return EFAULT. */
+		return EFAULT;
+	    case VM_FAULT_READ:
+	    case VM_FAULT_WRITE:
+		break;
+	    default:
+		return EINVAL;
+	}
+
+    if (curproc == NULL) {
+		/*
+		 * No process. This is probably a kernel fault early
+		 * in boot. Return EFAULT so as to panic instead of
+		 * getting into an infinite faulting loop.
+		 */
+		return EFAULT;
+	}
+
+    struct addrspace *as;
+    as = proc_getas();
+	if (as == NULL) {
+		/*
+		 * No address space set up. This is probably also a
+		 * kernel fault early in boot.
+		 */
+		return EFAULT;
+	}
+
+    KASSERT(as->pagetable != NULL);
+    KASSERT(as->regions != NULL);
+
+    /* Check if faultaddress exists in page table and store entry*/
+    paddr_t entry;
+    pagetable_lookup(as->pagetable, faultaddress, &entry);
+    if (entry != 0) {
+        panic("PTE found hasn't been written yet\n");
+        // must be retrieved from disk.
+        return 0;
+    }
+
+    /* check to see if the faultaddress lies within a valid region. */
+    struct region *cur_reg;
+    cur_reg = as->regions;
+    while (cur_reg != NULL && (faultaddress < cur_reg->reg_vbase || 
+             faultaddress >= cur_reg->reg_vbase + cur_reg->reg_npages)) {
+        cur_reg = cur_reg->reg_next;
+    }
+
+    if (cur_reg != NULL) {
+        panic("valid region found");
+    }
 
     panic("vm_fault hasn't been written yet\n");
 

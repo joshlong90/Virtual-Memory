@@ -53,9 +53,7 @@ struct region {
         vaddr_t reg_vbase;       // virtual memory base location of region.
         size_t reg_npages;       // size of region in pages
         // permissions.
-        int readable;
-        int writeable;
-        int executable;
+        int permissions;
 };
 
 struct addrspace {

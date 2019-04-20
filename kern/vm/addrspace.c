@@ -125,6 +125,8 @@ as_destroy(struct addrspace *as)
 		cur_reg = next_reg;
 	}
 
+	// TODO DEALLOCATE ALL FRAMES.
+
 	kfree(as);
 }
 
@@ -174,17 +176,15 @@ int
 as_define_region(struct addrspace *as, vaddr_t vaddr, size_t memsize,
 		 int readable, int writeable, int executable)
 {
+	/* print the parameters for debug purposes */
+	kprintf("vaddr: 0x%08x, memsize: %d, r: 0x%08x, w: 0x%08x, e: 0x%08x\n", vaddr, memsize, readable, writeable, executable);
+
 	struct region *cur_reg;
 	struct region *new_reg;
-	/*
-	 * Write this.
-	 */
-
-	// Notes
-	// every time as_define_region is called add another node into the linked list of regions.
-	// region structure should include base, limit and permissions.
-
 	size_t npages;
+
+	KASSERT(vaddr > 0);
+	KASSERT(vaddr + memsize < MIPS_KSEG0);
 
 	/* find the base location in virtual memory for the region. */
 	memsize += vaddr & ~(vaddr_t)PAGE_FRAME;
@@ -204,18 +204,31 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t memsize,
 	new_reg->reg_npages = npages;
 	new_reg->reg_vbase = vaddr;
 	new_reg->reg_next = NULL;
-	new_reg->writeable = writeable;
-	new_reg->readable = readable;
-	new_reg->executable = executable;
+	new_reg->permissions = readable | writeable | executable;
 
 	/* load the new region to the end of the linked list of regions. */
+	if (as->regions == NULL) {
+		as->regions = new_reg;
+		KASSERT(as->regions != NULL);
+		return 0;
+	}
+
 	cur_reg = as->regions;
-	while(cur_reg != NULL) {
+	while(cur_reg->reg_next != NULL) {
 		cur_reg = cur_reg->reg_next;
 	}
-	cur_reg = new_reg;
+	cur_reg->reg_next = new_reg;
 
-	// TODO insert region into page table.
+	cur_reg = as->regions;
+	while(cur_reg->reg_next != NULL) {
+		/* print the regions for debug purposes */
+		kprintf("vbase: 0x%08x, npages: %d, permissions: 0x%08x\n", cur_reg->reg_vbase, cur_reg->reg_npages, cur_reg->permissions);
+		cur_reg = cur_reg->reg_next;
+	}
+	/* print the regions for debug purposes */
+	kprintf("vbase: 0x%08x, npages: %d, permissions: 0x%08x\n", cur_reg->reg_vbase, cur_reg->reg_npages, cur_reg->permissions);
+
+	KASSERT(as->regions != NULL);
 
 	return 0;
 }
@@ -249,21 +262,25 @@ as_complete_load(struct addrspace *as)
 int
 as_define_stack(struct addrspace *as, vaddr_t *stackptr)
 {
-	/*
-	 * Write this.
-	 */
-
-	// Notes
-	// similar to as_define_region with one main difference, 
-	// it returns the location where the stack pointer should start at
-	// *stackptr = USERSTACK; top of the userspace.
-	// can call as_define_region with a size of 16 pages.
-
-	(void)as;
-
 	/* Initial user-level stack pointer */
-	// 16 pages allocated for the stack.
 	*stackptr = USERSTACK;
+
+	/* define the size of the stack. */
+	size_t memsize = STACK_NPAGES*PAGE_SIZE;
+
+	/* define the base virtual memory location of the stack. */
+	vaddr_t vaddr = USERSTACK - memsize;
+
+	/* setup permissions for stack: read/write, not executable. */
+	int readable = 0x00000004;
+	int writable = 0x00000002;
+	int executable = 0x00000000;
+
+	/* define the stack region within the address space. */
+	int result = as_define_region(as, vaddr, memsize, readable, writable, executable);
+	if (result != 0) {
+		return result;
+	}
 
 	return 0;
 }

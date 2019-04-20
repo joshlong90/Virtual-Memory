@@ -313,6 +313,23 @@ alloc_kpages(unsigned npages)
 	return PADDR_TO_KVADDR(paddr);
 }
 
+vaddr_t
+alloc_upages(unsigned npages) {
+
+        paddr_t paddr;
+        if (npages > 1 ) {
+                paddr = alloc_multiple_frames(npages);
+        }
+        else {
+                paddr = alloc_one_frame(npages);
+        }
+        
+	if (paddr == 0) {
+		return 0;
+	}
+	return paddr;
+}
+
 void
 free_kpages(vaddr_t addr)
 {
