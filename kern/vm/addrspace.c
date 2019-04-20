@@ -234,23 +234,20 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t memsize,
 int
 as_prepare_load(struct addrspace *as)
 {
-	/*
-	 * Write this.
-	 */
 	// make read only regions read/write for loading purposes.
 	// the TLB is responsible for accesses and enforcing permissions. 
 	// Make sure all loaded pages to TLB are writeable.
 	kprintf("as_prepare_load called\n");
-	if (as == NULL) {
-		return 0;
-	}
+	KASSERT(as != NULL);
+	KASSERT(as->regions != NULL);
+
 	struct region *cur_reg;
 	cur_reg = as->regions;
 
-	// set write permissions for all regions
+	// set read / write permissions for all regions
+	// shifting the old permissions to the left by 3 bits
 	while (cur_reg != NULL) {
-		// WW: Do we need to ensure we have readable permissions as well?
-		cur_reg->permissions |= RF_W;
+		cur_reg->permissions = cur_reg->permissions << 3 | RF_R | RF_W;
 		cur_reg = cur_reg->reg_next;
 	}
 
@@ -261,19 +258,17 @@ int
 as_complete_load(struct addrspace *as)
 {
 	kprintf("as_complete_load called\n");
-	/*
-	 * Write this.
-	 */
-	// enforce read only again.
-	if (as == NULL) {
-		return 0;
-	}
+	KASSERT(as != NULL);
+	KASSERT(as->regions != NULL);
 	struct region *cur_reg;
 	cur_reg = as->regions;
 
-	// unset write permissions for all regions
+	// reset write permissions to what they were originally
+	// by shifting the original right permissions to the right
+	// ANDing with 0b00000111 to ensure only the relevant bits are set for tidyness
+
 	while (cur_reg != NULL) {
-		cur_reg->permissions &= ~RF_W;
+		cur_reg->permissions = cur_reg->permissions >> 3 & 0x7;
 		cur_reg = cur_reg->reg_next;
 	}
 
