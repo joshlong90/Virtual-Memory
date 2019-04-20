@@ -220,13 +220,11 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t memsize,
 	cur_reg->reg_next = new_reg;
 
 	cur_reg = as->regions;
-	while(cur_reg->reg_next != NULL) {
+	while(cur_reg != NULL) {
 		/* print the regions for debug purposes */
 		kprintf("vbase: 0x%08x, npages: %d, permissions: 0x%08x\n", cur_reg->reg_vbase, cur_reg->reg_npages, cur_reg->permissions);
 		cur_reg = cur_reg->reg_next;
 	}
-	/* print the regions for debug purposes */
-	kprintf("vbase: 0x%08x, npages: %d, permissions: 0x%08x\n", cur_reg->reg_vbase, cur_reg->reg_npages, cur_reg->permissions);
 
 	KASSERT(as->regions != NULL);
 
@@ -242,26 +240,50 @@ as_prepare_load(struct addrspace *as)
 	// make read only regions read/write for loading purposes.
 	// the TLB is responsible for accesses and enforcing permissions. 
 	// Make sure all loaded pages to TLB are writeable.
+	kprintf("as_prepare_load called\n");
+	if (as == NULL) {
+		return 0;
+	}
+	struct region *cur_reg;
+	cur_reg = as->regions;
 
-	(void)as;
+	// set write permissions for all regions
+	while (cur_reg != NULL) {
+		// WW: Do we need to ensure we have readable permissions as well?
+		cur_reg->permissions |= RF_W;
+		cur_reg = cur_reg->reg_next;
+	}
+
 	return 0;
 }
 
 int
 as_complete_load(struct addrspace *as)
 {
+	kprintf("as_complete_load called\n");
 	/*
 	 * Write this.
 	 */
 	// enforce read only again.
+	if (as == NULL) {
+		return 0;
+	}
+	struct region *cur_reg;
+	cur_reg = as->regions;
 
-	(void)as;
+	// unset write permissions for all regions
+	while (cur_reg != NULL) {
+		cur_reg->permissions &= ~RF_W;
+		cur_reg = cur_reg->reg_next;
+	}
+
 	return 0;
 }
 
 int
 as_define_stack(struct addrspace *as, vaddr_t *stackptr)
 {
+	kprintf("as_define_stack called\n");
 	/* Initial user-level stack pointer */
 	*stackptr = USERSTACK;
 
@@ -272,9 +294,9 @@ as_define_stack(struct addrspace *as, vaddr_t *stackptr)
 	vaddr_t vaddr = USERSTACK - memsize;
 
 	/* setup permissions for stack: read/write, not executable. */
-	int readable = 0x00000004;
-	int writable = 0x00000002;
-	int executable = 0x00000000;
+	int readable = RF_R;
+	int writable = RF_W;
+	int executable = 0;
 
 	/* define the stack region within the address space. */
 	int result = as_define_region(as, vaddr, memsize, readable, writable, executable);

@@ -30,6 +30,13 @@
 #ifndef _ADDRSPACE_H_
 #define _ADDRSPACE_H_
 
+/* 
+ * Flags for region->permissions
+ */
+#define RF_R   0x4 /* region is readable */
+#define RF_W   0x2 /* region is writable */
+#define RF_X   0x1 /* region is executable */
+
 /*
  * Address space structure and operations.
  */
