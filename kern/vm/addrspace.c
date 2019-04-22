@@ -63,10 +63,16 @@ as_create(void)
 	as->regions = NULL;
 
 	/* Initialise the 2-level page table by allocating memory for the 1st level table. */
-	as->pagetable = kmalloc(TABLE_SIZE * sizeof(paddr_t *));
+	//as->pagetable = kmalloc(TABLE_SIZE * sizeof(paddr_t *));
+	as->pagetable = (paddr_t **)alloc_kpages(1);
 	if (as->pagetable == NULL) {
 		kfree(as);
 		return NULL;
+	}
+
+	unsigned int i;
+	for (i = 0; i < TABLE_SIZE; i++) {
+		as->pagetable[i] = NULL;
 	}
 
 	return as;
@@ -103,19 +109,24 @@ as_destroy(struct addrspace *as)
 	/*
 	 * Clean up as needed.
 	 */
-	// deallocate all dynamic data structures allocated in as_create().
-	int i;
+	unsigned int i, j;
 	struct region *cur_reg;
 	struct region *next_reg;
 
 	/* free all 2nd level tables in page table */
 	for (i = 0; i < PAGE_SIZE; i++) {
 		if (as->pagetable[i] != NULL) {
-			kfree(as->pagetable[i]);
+			for (j = 0; j < PAGE_SIZE; j++) {
+				if (as->pagetable[i][j] != 0) {
+					// kprintf("free address 0x%08x, virtual address 0x%08x\n", as->pagetable[i][j] & PAGE_FRAME, i<<22 | j<<12);
+					free_upages((paddr_t)(as->pagetable[i][j] & PAGE_FRAME));
+				}
+			}
+			free_kpages((vaddr_t)as->pagetable[i]);
 		}
 	}
 	/* free 1st level table in page table */
-	kfree(as->pagetable);
+	free_kpages((vaddr_t)as->pagetable);
 
 	/* free all regions in linked list */
 	cur_reg = as->regions;
@@ -125,41 +136,45 @@ as_destroy(struct addrspace *as)
 		cur_reg = next_reg;
 	}
 
-	// TODO DEALLOCATE ALL FRAMES.
-
 	kfree(as);
 }
 
-void
-as_activate(void)
-{
+void as_activate(void) {
+	int i, spl;
 	struct addrspace *as;
 
 	as = proc_getas();
 	if (as == NULL) {
-		/*
-		 * Kernel thread without an address space; leave the
-		 * prior address space in place.
-		 */
 		return;
 	}
 
-	/*
-	 * Write this.
-	 */
-	// TLB flush can copy dumbvm code.
+	/* Disable interrupts on this CPU while frobbing the TLB. */
+	spl = splhigh();
 
+	for (i=0; i<NUM_TLB; i++) {
+		tlb_write(TLBHI_INVALID(i), TLBLO_INVALID(), i);
+	}
+
+	splx(spl);
 }
 
-void
-as_deactivate(void)
-{
-	/*
-	 * Write this. For many designs it won't need to actually do
-	 * anything. See proc.c for an explanation of why it (might)
-	 * be needed.
-	 */
-	// TLB flush as in as_activate
+void as_deactivate(void) {
+	int i, spl;
+	struct addrspace *as;
+
+	as = proc_getas();
+	if (as == NULL) {
+		return;
+	}
+
+	/* Disable interrupts on this CPU while frobbing the TLB. */
+	spl = splhigh();
+
+	for (i=0; i<NUM_TLB; i++) {
+		tlb_write(TLBHI_INVALID(i), TLBLO_INVALID(), i);
+	}
+
+	splx(spl);
 }
 
 /*
@@ -177,14 +192,15 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t memsize,
 		 int readable, int writeable, int executable)
 {
 	/* print the parameters for debug purposes */
-	kprintf("vaddr: 0x%08x, memsize: %d, r: 0x%08x, w: 0x%08x, e: 0x%08x\n", vaddr, memsize, readable, writeable, executable);
+	//kprintf("vaddr: 0x%08x, memsize: %d, r: 0x%08x, w: 0x%08x, e: 0x%08x\n", vaddr, memsize, readable, writeable, executable);
 
 	struct region *cur_reg;
 	struct region *new_reg;
 	size_t npages;
 
-	KASSERT(vaddr > 0);
-	KASSERT(vaddr + memsize < MIPS_KSEG0);
+	if ((readable | writeable | executable) == 0) {
+		return EINVAL;
+	}
 
 	/* find the base location in virtual memory for the region. */
 	memsize += vaddr & ~(vaddr_t)PAGE_FRAME;
@@ -222,7 +238,7 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t memsize,
 	cur_reg = as->regions;
 	while(cur_reg != NULL) {
 		/* print the regions for debug purposes */
-		kprintf("vbase: 0x%08x, npages: %d, permissions: 0x%08x\n", cur_reg->reg_vbase, cur_reg->reg_npages, cur_reg->permissions);
+		// kprintf("vbase: 0x%08x, npages: %d, permissions: 0x%08x\n", cur_reg->reg_vbase, cur_reg->reg_npages, cur_reg->permissions);
 		cur_reg = cur_reg->reg_next;
 	}
 
@@ -237,7 +253,7 @@ as_prepare_load(struct addrspace *as)
 	// make read only regions read/write for loading purposes.
 	// the TLB is responsible for accesses and enforcing permissions. 
 	// Make sure all loaded pages to TLB are writeable.
-	kprintf("as_prepare_load called\n");
+	// kprintf("as_prepare_load called\n");
 	KASSERT(as != NULL);
 	KASSERT(as->regions != NULL);
 
@@ -257,7 +273,7 @@ as_prepare_load(struct addrspace *as)
 int
 as_complete_load(struct addrspace *as)
 {
-	kprintf("as_complete_load called\n");
+	int i, spl;
 	KASSERT(as != NULL);
 	KASSERT(as->regions != NULL);
 	struct region *cur_reg;
@@ -269,8 +285,19 @@ as_complete_load(struct addrspace *as)
 
 	while (cur_reg != NULL) {
 		cur_reg->permissions = cur_reg->permissions >> 3 & 0x7;
+		/* update all readonly regions in the pagetable. */
+		if ((cur_reg->permissions & RF_W) == 0) {
+			pagetable_update(as->pagetable, cur_reg->reg_vbase, cur_reg->reg_npages);
+		}
 		cur_reg = cur_reg->reg_next;
 	}
+
+	/* flush the TLB. */
+	spl = splhigh();
+	for (i=0; i<NUM_TLB; i++) {
+		tlb_write(TLBHI_INVALID(i), TLBLO_INVALID(), i);
+	}
+	splx(spl);
 
 	return 0;
 }
@@ -278,7 +305,7 @@ as_complete_load(struct addrspace *as)
 int
 as_define_stack(struct addrspace *as, vaddr_t *stackptr)
 {
-	kprintf("as_define_stack called\n");
+	// kprintf("as_define_stack called\n");
 	/* Initial user-level stack pointer */
 	*stackptr = USERSTACK;
 

@@ -324,9 +324,6 @@ alloc_upages(unsigned npages) {
                 paddr = alloc_one_frame(npages);
         }
         
-	if (paddr == 0) {
-		return 0;
-	}
 	return paddr;
 }
 
@@ -334,5 +331,12 @@ void
 free_kpages(vaddr_t addr)
 {
         free_frames(addr);
+}
+
+void
+free_upages(paddr_t addr)
+{
+        vaddr_t vaddr = PADDR_TO_KVADDR(addr);
+        free_frames(vaddr);
 }
 

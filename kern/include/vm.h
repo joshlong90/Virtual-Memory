@@ -66,6 +66,7 @@ int vm_fault(int faulttype, vaddr_t faultaddress);
 vaddr_t alloc_kpages(unsigned npages);
 paddr_t alloc_upages(unsigned npages);
 void free_kpages(vaddr_t addr);
+void free_upages(paddr_t addr);
 
 /* TLB shootdown handling called from interprocessor_interrupt */
 void vm_tlbshootdown(const struct tlbshootdown *);

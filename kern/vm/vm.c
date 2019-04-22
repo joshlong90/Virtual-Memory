@@ -16,17 +16,16 @@
  * insert a pagetable entry that maps to the provided entry. 
  */
 void pagetable_insert(paddr_t **pagetable, vaddr_t vaddr, paddr_t entry) {
-    // frame has been allocated. Insert frame number into page table.
-    // frame number is expected to be paddr >> 12.
+    // frame has been allocated. Insert entry into pagetable.
     vaddr_t indexT1 = vaddr >> 22;                                 // first-level table index.
     vaddr_t indexT2 = (vaddr >> 12) & (~(vaddr_t)PAGE_FRAME >> 2); // second-level table index.
-    vaddr_t i;
+    unsigned int i;
 
     KASSERT(pagetable != NULL);
 
     /* if the second level page table does not yet exist, allocate it. */
     if (pagetable[indexT1] == NULL) {
-        pagetable[indexT1] = kmalloc(TABLE_SIZE * sizeof(paddr_t));
+        pagetable[indexT1] = (paddr_t *)alloc_kpages(1);
         /* fill the second level page table with empty slots. */
         for (i = 0; i < TABLE_SIZE; i++) {
             pagetable[indexT1][i] = 0;
@@ -70,7 +69,7 @@ void pagetable_lookup(paddr_t **pagetable, vaddr_t vaddr, paddr_t *entry) {
 void pagetable_update(paddr_t **pagetable, vaddr_t reg_vbase, size_t reg_npages) {
     vaddr_t indexT1;
     vaddr_t indexT2;
-    vaddr_t i;
+    unsigned int i;
     vaddr_t reg_vend = reg_vbase + reg_npages*PAGE_SIZE;
 
     KASSERT(pagetable != NULL);
@@ -142,14 +141,13 @@ int vm_fault(int faulttype, vaddr_t faultaddress) {
     KASSERT(as->regions != NULL);
 
     /* Check if faultaddress exists in page table and store entry*/
-    paddr_t entry;
-    pagetable_lookup(as->pagetable, faultaddress, &entry);
-    if (entry != 0) {
+    paddr_t entryLo;
+    pagetable_lookup(as->pagetable, faultaddress, &entryLo);
+    if (entryLo != 0) {
         /* load the TLB. */
-        int spl;
         /* Disable interrupts on this CPU while frobbing the TLB. */
-	    spl = splhigh();
-        tlb_random((uint32_t)(faultaddress & TLBHI_VPAGE), (uint32_t) entry);
+	    int spl = splhigh();
+        tlb_random(faultaddress & TLBHI_VPAGE, entryLo);
         splx(spl);
 
         return 0;
@@ -158,35 +156,39 @@ int vm_fault(int faulttype, vaddr_t faultaddress) {
     /* check to see if the faultaddress lies within a valid region. */
     struct region *cur_reg;
     cur_reg = as->regions;
-    while (cur_reg != NULL && (faultaddress < cur_reg->reg_vbase || 
-             faultaddress >= cur_reg->reg_vbase + cur_reg->reg_npages)) {
+    while (cur_reg != NULL) {
+        /* break if faultaddress is in current region. */
+        if  (faultaddress >= cur_reg->reg_vbase && faultaddress < 
+                    cur_reg->reg_vbase + cur_reg->reg_npages*PAGE_SIZE) {
+            break;
+        }
         cur_reg = cur_reg->reg_next;
     }
 
     if (cur_reg != NULL) {
         paddr_t paddr;
         /* allocate a new frame for the faultaddress */
-        paddr = alloc_upages(1);
+        paddr = (paddr_t)alloc_upages(1);
 
         KASSERT((paddr & ~(paddr_t)PAGE_FRAME) == 0);
+        KASSERT(paddr < MIPS_KSEG0);
 
         /* zero fill the frame */
-        bzero((void *)paddr, PAGE_SIZE);
+        //bzero((void *)paddr, (size_t)PAGE_SIZE);
 
         /* add permissions to pagetable entry */
-        paddr |= TLBLO_VALID;
+        entryLo = paddr | TLBLO_VALID;
         if ((cur_reg->permissions & RF_W) != 0) {
-            paddr |= TLBLO_DIRTY;
+            entryLo |= TLBLO_DIRTY;
         }
 
         /* place etnry in pagetable. */
-        pagetable_insert(as->pagetable, faultaddress, paddr);
+        pagetable_insert(as->pagetable, faultaddress, entryLo);
 
         /* load the TLB. */
-        int spl;
         /* Disable interrupts on this CPU while frobbing the TLB. */
-	    spl = splhigh();
-        tlb_random((uint32_t)(faultaddress & TLBHI_VPAGE), (uint32_t) paddr);
+	    int spl = splhigh();
+        tlb_random(faultaddress & TLBHI_VPAGE, entryLo);
 		splx(spl);
 
         return 0;
