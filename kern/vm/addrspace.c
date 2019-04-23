@@ -123,15 +123,32 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 		cur_reg = cur_reg->reg_next;
 	}
 
+	paddr_t paddr, entryLo;
 	for (i = 0; i < TABLE_SIZE; i++) {
 		if (old->pagetable[i] != NULL) {
-			paddr_t* page_ptr = (paddr_t *)alloc_kpages(1);
-			if (page_ptr == NULL) {
+			newas->pagetable[i] = (paddr_t *)alloc_kpages(1);
+			if (newas->pagetable[i] == NULL) {
 				return ENOMEM;
 			}
-			newas->pagetable[i] = page_ptr;
 			for (j = 0; j < TABLE_SIZE; j++) {
-				newas->pagetable[i][j] = old->pagetable[i][j];
+				if (old->pagetable[i][j] != 0) {
+					/* allocate a new frame for the copied entry. */
+					paddr = (paddr_t)alloc_kpages(1);
+					if (paddr == 0) {
+						return ENOMEM;
+					}
+					/* copy data from old frame to new frame. */
+					memmove((void *)paddr, (const void *)(PADDR_TO_KVADDR(old->pagetable[i][j]) & PAGE_FRAME), (size_t)PAGE_SIZE);
+					/* copy permissions from old entry to new pagetable entry */
+					entryLo = KVADDR_TO_PADDR(paddr) | TLBLO_VALID;
+					if ((old->pagetable[i][j] & TLBLO_DIRTY) != 0) {
+						entryLo |= TLBLO_DIRTY;
+					}
+					/* insert entry in pagetable. */
+					newas->pagetable[i][j] = entryLo;
+				} else {
+					newas->pagetable[i][j] = 0;
+				}
 			}
 		} else {
 			newas->pagetable[i] = NULL;
