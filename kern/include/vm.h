@@ -45,7 +45,7 @@
 #define VM_FAULT_READONLY    2    /* A write to a readonly page was attempted*/
 
 /* insert a page table entry that maps to the provided frame number. */
-void pagetable_insert(paddr_t **pagetable, vaddr_t vaddr, paddr_t frame_no);
+int pagetable_insert(paddr_t **pagetable, vaddr_t vaddr, paddr_t frame_no);
 
 /* lookup page table at entry vaddr and return frame number. Return null if non exists. */
 void pagetable_lookup(paddr_t **pagetable, vaddr_t vaddr, paddr_t *frame_no);
@@ -64,9 +64,7 @@ int vm_fault(int faulttype, vaddr_t faultaddress);
 
 /* Allocate/free kernel heap pages (called by kmalloc/kfree) */
 vaddr_t alloc_kpages(unsigned npages);
-paddr_t alloc_upages(unsigned npages);
 void free_kpages(vaddr_t addr);
-void free_upages(paddr_t addr);
 
 /* TLB shootdown handling called from interprocessor_interrupt */
 void vm_tlbshootdown(const struct tlbshootdown *);

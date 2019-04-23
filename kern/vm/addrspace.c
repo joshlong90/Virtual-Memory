@@ -64,12 +64,13 @@ as_create(void)
 
 	/* Initialise the 2-level page table by allocating memory for the 1st level table. */
 	//as->pagetable = kmalloc(TABLE_SIZE * sizeof(paddr_t *));
-	as->pagetable = (paddr_t **)alloc_kpages(1);
+	as->pagetable = kmalloc(TABLE_SIZE * sizeof(paddr_t *));
 	if (as->pagetable == NULL) {
 		kfree(as);
 		return NULL;
 	}
 
+	/* zero fill the 1st-level table */
 	unsigned int i;
 	for (i = 0; i < TABLE_SIZE; i++) {
 		as->pagetable[i] = NULL;
@@ -114,12 +115,12 @@ as_destroy(struct addrspace *as)
 	struct region *next_reg;
 
 	/* free all 2nd level tables in page table */
-	for (i = 0; i < PAGE_SIZE; i++) {
+	for (i = 0; i < TABLE_SIZE; i++) {
 		if (as->pagetable[i] != NULL) {
-			for (j = 0; j < PAGE_SIZE; j++) {
+			for (j = 0; j < TABLE_SIZE; j++) {
 				if (as->pagetable[i][j] != 0) {
-					// kprintf("free address 0x%08x, virtual address 0x%08x\n", as->pagetable[i][j] & PAGE_FRAME, i<<22 | j<<12);
-					free_upages((paddr_t)(as->pagetable[i][j] & PAGE_FRAME));
+					//kprintf("free address 0x%08x, virtual address 0x%08x\n", as->pagetable[i][j] & PAGE_FRAME, i<<22 | j<<12);
+					free_kpages((paddr_t)(PADDR_TO_KVADDR(as->pagetable[i][j]) & PAGE_FRAME));
 				}
 			}
 			free_kpages((vaddr_t)as->pagetable[i]);

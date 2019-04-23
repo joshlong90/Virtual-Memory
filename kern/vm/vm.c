@@ -15,10 +15,10 @@
 /* 
  * insert a pagetable entry that maps to the provided entry. 
  */
-void pagetable_insert(paddr_t **pagetable, vaddr_t vaddr, paddr_t entry) {
+int pagetable_insert(paddr_t **pagetable, vaddr_t vaddr, paddr_t entryLo) {
     // frame has been allocated. Insert entry into pagetable.
-    vaddr_t indexT1 = vaddr >> 22;                                 // first-level table index.
-    vaddr_t indexT2 = (vaddr >> 12) & (~(vaddr_t)PAGE_FRAME >> 2); // second-level table index.
+    vaddr_t indexT1 = vaddr >> 22;       // first-level table index.
+    vaddr_t indexT2 = vaddr << 12 >> 22; // second-level table index.
     unsigned int i;
 
     KASSERT(pagetable != NULL);
@@ -26,6 +26,9 @@ void pagetable_insert(paddr_t **pagetable, vaddr_t vaddr, paddr_t entry) {
     /* if the second level page table does not yet exist, allocate it. */
     if (pagetable[indexT1] == NULL) {
         pagetable[indexT1] = (paddr_t *)alloc_kpages(1);
+        if (pagetable[indexT1] == NULL) {
+            return ENOMEM;
+        }
         /* fill the second level page table with empty slots. */
         for (i = 0; i < TABLE_SIZE; i++) {
             pagetable[indexT1][i] = 0;
@@ -33,17 +36,17 @@ void pagetable_insert(paddr_t **pagetable, vaddr_t vaddr, paddr_t entry) {
     }
 
     /* store the entry in the page table. */
-    pagetable[indexT1][indexT2] = entry;
+    pagetable[indexT1][indexT2] = entryLo;
 
-    return;
+    return 0;
 }
 
 /*
  * lookup pagetable at location vaddr and return entry. Return null if non exists.
  */
 void pagetable_lookup(paddr_t **pagetable, vaddr_t vaddr, paddr_t *entry) {
-    vaddr_t indexT1 = vaddr >> 22; // first-level table index.
-    vaddr_t indexT2 = (vaddr >> 12) & (~(vaddr_t)PAGE_FRAME >> 2); // second-level table index.
+    vaddr_t indexT1 = vaddr >> 22;       // first-level table index.
+    vaddr_t indexT2 = vaddr << 12 >> 22; // second-level table index.
 
     KASSERT(pagetable != NULL);
 
@@ -81,7 +84,7 @@ void pagetable_update(paddr_t **pagetable, vaddr_t reg_vbase, size_t reg_npages)
         if (pagetable[indexT1] == NULL) {
             i = i + TABLE_SIZE*PAGE_SIZE - i%(TABLE_SIZE*PAGE_SIZE) - PAGE_SIZE;
         } else {
-            indexT2 = (i >> 12) & (~(vaddr_t)PAGE_FRAME >> 2);
+            indexT2 = i << 12 >> 22;
             /* if there is an entry toggle its dirty bit. */
             if (pagetable[indexT1][indexT2] != 0) {
                 pagetable[indexT1][indexT2] ^= TLBLO_DIRTY;
@@ -167,23 +170,27 @@ int vm_fault(int faulttype, vaddr_t faultaddress) {
 
     if (cur_reg != NULL) {
         paddr_t paddr;
-        /* allocate a new frame for the faultaddress */
-        paddr = (paddr_t)alloc_upages(1);
 
-        KASSERT((paddr & ~(paddr_t)PAGE_FRAME) == 0);
-        KASSERT(paddr < MIPS_KSEG0);
+        /* allocate a new frame for the faultaddress */
+        paddr = (paddr_t)alloc_kpages(1);
+        if (paddr == 0) {
+            return ENOMEM;
+        }
 
         /* zero fill the frame */
-        //bzero((void *)paddr, (size_t)PAGE_SIZE);
+        bzero((void *)paddr, (size_t)PAGE_SIZE);
 
         /* add permissions to pagetable entry */
-        entryLo = paddr | TLBLO_VALID;
+        entryLo = KVADDR_TO_PADDR(paddr) | TLBLO_VALID;
         if ((cur_reg->permissions & RF_W) != 0) {
             entryLo |= TLBLO_DIRTY;
         }
 
         /* place etnry in pagetable. */
-        pagetable_insert(as->pagetable, faultaddress, entryLo);
+        int result = pagetable_insert(as->pagetable, faultaddress, entryLo);
+        if (result != 0) {
+            return result;
+        }
 
         /* load the TLB. */
         /* Disable interrupts on this CPU while frobbing the TLB. */
@@ -195,17 +202,6 @@ int vm_fault(int faulttype, vaddr_t faultaddress) {
     }
 
     return EFAULT;
-
-    // called on a TLB refill miss.
-    // vm_fault -> vm_fault READONLY -> yes -> EFAULT
-    //             no ->   lookup PT -> yes -> load TLB
-    //                     no ->   lookup region -> valid -> allocate frame, zero fill, insert PTE -> load TLB
-    //                             non-valid ->    EFAULT
-
-    // allocate frame can be done with alloc_kpage
-
-    // tlb_random() can be used for TLB refill. Disable interrupts locally for tlb_random().
-
 }
 
 /*
