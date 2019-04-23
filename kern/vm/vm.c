@@ -18,7 +18,7 @@
 int pagetable_insert(paddr_t **pagetable, vaddr_t vaddr, paddr_t entryLo) {
     // frame has been allocated. Insert entry into pagetable.
     vaddr_t indexT1 = vaddr >> 22;       // first-level table index.
-    vaddr_t indexT2 = vaddr << 12 >> 22; // second-level table index.
+    vaddr_t indexT2 = vaddr << 10 >> 22; // second-level table index.
     unsigned int i;
 
     KASSERT(pagetable != NULL);
@@ -46,7 +46,7 @@ int pagetable_insert(paddr_t **pagetable, vaddr_t vaddr, paddr_t entryLo) {
  */
 void pagetable_lookup(paddr_t **pagetable, vaddr_t vaddr, paddr_t *entry) {
     vaddr_t indexT1 = vaddr >> 22;       // first-level table index.
-    vaddr_t indexT2 = vaddr << 12 >> 22; // second-level table index.
+    vaddr_t indexT2 = vaddr << 10 >> 22; // second-level table index.
 
     KASSERT(pagetable != NULL);
 
@@ -84,7 +84,7 @@ void pagetable_update(paddr_t **pagetable, vaddr_t reg_vbase, size_t reg_npages)
         if (pagetable[indexT1] == NULL) {
             i = i + TABLE_SIZE*PAGE_SIZE - i%(TABLE_SIZE*PAGE_SIZE) - PAGE_SIZE;
         } else {
-            indexT2 = i << 12 >> 22;
+            indexT2 = i << 10 >> 22;
             /* if there is an entry toggle its dirty bit. */
             if (pagetable[indexT1][indexT2] != 0) {
                 pagetable[indexT1][indexT2] ^= TLBLO_DIRTY;
