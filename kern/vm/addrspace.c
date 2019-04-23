@@ -82,12 +82,14 @@ as_create(void)
 int
 as_copy(struct addrspace *old, struct addrspace **ret)
 {
+	// kprintf("========== AS COPY CALLED\n");
 	struct addrspace *newas;
 
 	newas = as_create();
 	if (newas==NULL) {
 		return ENOMEM;
 	}
+	KASSERT(newas->pagetable != NULL);
 
 	/*
 	 * Write this.
@@ -98,7 +100,46 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	// nested for loop two loops in a row.
 	// adds all the same regions in parent.
 
-	(void)old;
+	struct region *cur_reg;
+	int permissions, readable, writeable, executable, result;
+	int i, j;
+	size_t memsize;
+	vaddr_t vaddr;
+	cur_reg = old->regions;
+
+	/* copy the permissions and region structure */
+	while (cur_reg != NULL) {
+		permissions = cur_reg->permissions;
+		readable    = permissions & RF_R;
+		writeable   = permissions & RF_W;
+		executable  = permissions & RF_X;
+		memsize = cur_reg->reg_npages * PAGE_SIZE;
+		vaddr = cur_reg->reg_vbase;
+		result = as_define_region(newas, vaddr, memsize, readable, writeable, executable);
+		if (result != 0) {
+			return result;
+		}
+
+		cur_reg = cur_reg->reg_next;
+	}
+
+	for (i = 0; i < TABLE_SIZE; i++) {
+		if (old->pagetable[i] != NULL) {
+			paddr_t* page_ptr = (paddr_t *)alloc_kpages(1);
+			if (page_ptr == NULL) {
+				return ENOMEM;
+			}
+			newas->pagetable[i] = page_ptr;
+			for (j = 0; j < TABLE_SIZE; j++) {
+				newas->pagetable[i][j] = old->pagetable[i][j];
+			}
+		} else {
+			newas->pagetable[i] = NULL;
+		}
+	}
+
+	// kprintf("========== AS COPY FINISHED\n");
+	/* copy the necessary page data to the destination */
 
 	*ret = newas;
 	return 0;
@@ -193,7 +234,7 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t memsize,
 		 int readable, int writeable, int executable)
 {
 	/* print the parameters for debug purposes */
-	//kprintf("vaddr: 0x%08x, memsize: %d, r: 0x%08x, w: 0x%08x, e: 0x%08x\n", vaddr, memsize, readable, writeable, executable);
+	// kprintf("vaddr: 0x%08x, memsize: %d, r: 0x%08x, w: 0x%08x, e: 0x%08x\n", vaddr, memsize, readable, writeable, executable);
 
 	struct region *cur_reg;
 	struct region *new_reg;
@@ -322,8 +363,7 @@ as_define_stack(struct addrspace *as, vaddr_t *stackptr)
 	int executable = 0;
 
 	/* define the stack region within the address space. */
-	int result = as_define_region(as, vaddr, memsize, readable, writable, executable);
-	if (result != 0) {
+	int result = as_define_region(as, vaddr, memsize, readable, writable, executable); if (result != 0) {
 		return result;
 	}
 
