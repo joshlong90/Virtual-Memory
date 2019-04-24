@@ -58,9 +58,8 @@ struct vnode;
 struct region {
         struct region *reg_next; // next region in linked list.
         vaddr_t reg_vbase;       // virtual memory base location of region.
-        size_t reg_npages;       // size of region in pages
-        // permissions.
-        int permissions;
+        size_t reg_npages;       // size of region in number of pages.
+        int permissions;         // region permissions (read/write/exec).
 };
 
 struct addrspace {

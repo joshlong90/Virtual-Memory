@@ -62,15 +62,14 @@ as_create(void)
 	/* Initialise the regions linked list to be empty. */
 	as->regions = NULL;
 
-	/* Initialise the 2-level page table by allocating memory for the 1st level table. */
-	//as->pagetable = kmalloc(TABLE_SIZE * sizeof(paddr_t *));
-	as->pagetable = kmalloc(TABLE_SIZE * sizeof(paddr_t *));
+	/* Initialise the 2-level pagetable by allocating memory for the 1st level table. */
+	as->pagetable = (paddr_t **)alloc_kpages(1);
 	if (as->pagetable == NULL) {
 		kfree(as);
 		return NULL;
 	}
 
-	/* zero fill the 1st-level table */
+	/* zero fill the 1st-level table. */
 	unsigned int i;
 	for (i = 0; i < TABLE_SIZE; i++) {
 		as->pagetable[i] = NULL;
@@ -89,16 +88,6 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	if (newas==NULL) {
 		return ENOMEM;
 	}
-	KASSERT(newas->pagetable != NULL);
-
-	/*
-	 * Write this.
-	 */
-	// for each page in new copy, it needs to be mapped to its own unique copy of the data that was in the frame.
-	// called by fork. create new page table that points to new fresh frames.
-	// copy the content of all frames pointed to by the old parent page table.
-	// nested for loop two loops in a row.
-	// adds all the same regions in parent.
 
 	struct region *cur_reg;
 	int permissions, readable, writeable, executable, result;
@@ -144,7 +133,7 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 					if ((old->pagetable[i][j] & TLBLO_DIRTY) != 0) {
 						entryLo |= TLBLO_DIRTY;
 					}
-					/* insert entry in pagetable. */
+					/* insert new entry into new address space pagetable. */
 					newas->pagetable[i][j] = entryLo;
 				} else {
 					newas->pagetable[i][j] = 0;
@@ -181,13 +170,14 @@ as_destroy(struct addrspace *as)
 					free_kpages((paddr_t)(PADDR_TO_KVADDR(as->pagetable[i][j]) & PAGE_FRAME));
 				}
 			}
+			/* free 2nd level table in pagetable. */
 			free_kpages((vaddr_t)as->pagetable[i]);
 		}
 	}
-	/* free 1st level table in page table */
+	/* free 1st level table in pagetable. */
 	free_kpages((vaddr_t)as->pagetable);
 
-	/* free all regions in linked list */
+	/* free all regions in linked list. */
 	cur_reg = as->regions;
 	while(cur_reg != NULL) {
 		next_reg = cur_reg->reg_next;
@@ -195,7 +185,9 @@ as_destroy(struct addrspace *as)
 		cur_reg = next_reg;
 	}
 
+	/* free the address space struct. */
 	kfree(as);
+	return;
 }
 
 void as_activate(void) {
@@ -250,14 +242,22 @@ int
 as_define_region(struct addrspace *as, vaddr_t vaddr, size_t memsize,
 		 int readable, int writeable, int executable)
 {
-	/* print the parameters for debug purposes */
-	// kprintf("vaddr: 0x%08x, memsize: %d, r: 0x%08x, w: 0x%08x, e: 0x%08x\n", vaddr, memsize, readable, writeable, executable);
-
 	struct region *cur_reg;
 	struct region *new_reg;
 	size_t npages;
 
+	/* address space should not be null */
+	if (as == NULL) {
+		return EINVAL;
+	}
+
+	/* a region should not have no permissions. */
 	if ((readable | writeable | executable) == 0) {
+		return EINVAL;
+	}
+
+	/* a region must be defined in user space. */
+	if (vaddr + memsize > MIPS_KSEG0) {
 		return EINVAL;
 	}
 
@@ -269,39 +269,29 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t memsize,
 	memsize = (memsize + PAGE_SIZE - 1) & PAGE_FRAME;
 	npages = memsize / PAGE_SIZE;
 
-	/* allocate memory for new region */
+	/* allocate memory for new region. */
 	new_reg = kmalloc(sizeof(struct region));
 	if (new_reg == NULL) {
 		return ENOMEM;
 	}
 
-	/* save new region attributes */
+	/* save new region attributes. */
 	new_reg->reg_npages = npages;
 	new_reg->reg_vbase = vaddr;
 	new_reg->reg_next = NULL;
 	new_reg->permissions = readable | writeable | executable;
 
-	/* load the new region to the end of the linked list of regions. */
+	/* if the regions list is null make this new region the head of the linked list. */
 	if (as->regions == NULL) {
 		as->regions = new_reg;
-		KASSERT(as->regions != NULL);
-		return 0;
+	} else {
+		/* otherwise add the new region to the end of the list. */
+		cur_reg = as->regions;
+		while(cur_reg->reg_next != NULL) {
+			cur_reg = cur_reg->reg_next;
+		}
+		cur_reg->reg_next = new_reg;
 	}
-
-	cur_reg = as->regions;
-	while(cur_reg->reg_next != NULL) {
-		cur_reg = cur_reg->reg_next;
-	}
-	cur_reg->reg_next = new_reg;
-
-	cur_reg = as->regions;
-	while(cur_reg != NULL) {
-		/* print the regions for debug purposes */
-		// kprintf("vbase: 0x%08x, npages: %d, permissions: 0x%08x\n", cur_reg->reg_vbase, cur_reg->reg_npages, cur_reg->permissions);
-		cur_reg = cur_reg->reg_next;
-	}
-
-	KASSERT(as->regions != NULL);
 
 	return 0;
 }
@@ -309,12 +299,10 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t memsize,
 int
 as_prepare_load(struct addrspace *as)
 {
-	// make read only regions read/write for loading purposes.
-	// the TLB is responsible for accesses and enforcing permissions. 
-	// Make sure all loaded pages to TLB are writeable.
-	// kprintf("as_prepare_load called\n");
-	KASSERT(as != NULL);
-	KASSERT(as->regions != NULL);
+	/* address space should not be null */
+	if (as == NULL ) {
+		return EINVAL;
+	}
 
 	struct region *cur_reg;
 	cur_reg = as->regions;
@@ -332,26 +320,31 @@ as_prepare_load(struct addrspace *as)
 int
 as_complete_load(struct addrspace *as)
 {
+	/* address space should not be null */
+	if (as == NULL ) {
+		return EINVAL;
+	}
+
 	int i, spl;
-	KASSERT(as != NULL);
-	KASSERT(as->regions != NULL);
 	struct region *cur_reg;
 	cur_reg = as->regions;
 
 	// reset write permissions to what they were originally
 	// by shifting the original right permissions to the right
-	// ANDing with 0b00000111 to ensure only the relevant bits are set for tidyness
-
+	// ANDing with 0b00000111 to ensure only the relevant bits are set for tidyness.
 	while (cur_reg != NULL) {
 		cur_reg->permissions = cur_reg->permissions >> 3 & 0x7;
 		/* update all readonly regions in the pagetable. */
 		if ((cur_reg->permissions & RF_W) == 0) {
-			pagetable_update(as->pagetable, cur_reg->reg_vbase, cur_reg->reg_npages);
+			int result = pagetable_update(as->pagetable, cur_reg->reg_vbase, cur_reg->reg_npages);
+			if (result != 0) {
+				return result;
+			}
 		}
 		cur_reg = cur_reg->reg_next;
 	}
 
-	/* flush the TLB. */
+	/* flush the TLB to remove any read/write entries that should be readonly. */
 	spl = splhigh();
 	for (i=0; i<NUM_TLB; i++) {
 		tlb_write(TLBHI_INVALID(i), TLBLO_INVALID(), i);
@@ -364,7 +357,6 @@ as_complete_load(struct addrspace *as)
 int
 as_define_stack(struct addrspace *as, vaddr_t *stackptr)
 {
-	// kprintf("as_define_stack called\n");
 	/* Initial user-level stack pointer */
 	*stackptr = USERSTACK;
 
@@ -380,7 +372,8 @@ as_define_stack(struct addrspace *as, vaddr_t *stackptr)
 	int executable = 0;
 
 	/* define the stack region within the address space. */
-	int result = as_define_region(as, vaddr, memsize, readable, writable, executable); if (result != 0) {
+	int result = as_define_region(as, vaddr, memsize, readable, writable, executable); 
+	if (result != 0) {
 		return result;
 	}
 

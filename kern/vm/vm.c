@@ -13,29 +13,32 @@
 /* Place your page table functions here */
 
 /* 
- * insert a pagetable entry that maps to the provided entry. 
+ * insert a pagetable entry that maps to the provided entryLo. 
  */
 int pagetable_insert(paddr_t **pagetable, vaddr_t vaddr, paddr_t entryLo) {
-    // frame has been allocated. Insert entry into pagetable.
-    vaddr_t indexT1 = vaddr >> 22;       // first-level table index.
-    vaddr_t indexT2 = vaddr << 10 >> 22; // second-level table index.
     unsigned int i;
+    /* retrieve the first and second level page table indexes from vaddr. */
+    vaddr_t indexT1 = vaddr >> 22;
+    vaddr_t indexT2 = vaddr << 10 >> 22;
 
-    KASSERT(pagetable != NULL);
+    /* the pagetable should not be null */
+    if (pagetable == NULL) {
+        return EINVAL;
+    }
 
-    /* if the second level page table does not yet exist, allocate it. */
+    /* if the second level pagetable does not yet exist, allocate it. */
     if (pagetable[indexT1] == NULL) {
         pagetable[indexT1] = (paddr_t *)alloc_kpages(1);
         if (pagetable[indexT1] == NULL) {
             return ENOMEM;
         }
-        /* fill the second level page table with empty slots. */
+        /* fill the second level pagetable with empty slots. */
         for (i = 0; i < TABLE_SIZE; i++) {
             pagetable[indexT1][i] = 0;
         }
     }
 
-    /* store the entry in the page table. */
+    /* store entryLo in the pagetable. */
     pagetable[indexT1][indexT2] = entryLo;
 
     return 0;
@@ -44,39 +47,50 @@ int pagetable_insert(paddr_t **pagetable, vaddr_t vaddr, paddr_t entryLo) {
 /*
  * lookup pagetable at location vaddr and return entry. Return null if non exists.
  */
-void pagetable_lookup(paddr_t **pagetable, vaddr_t vaddr, paddr_t *entry) {
+int pagetable_lookup(paddr_t **pagetable, vaddr_t vaddr, paddr_t *entry) {
+    /* retrieve the first and second level page table indexes from vaddr. */
     vaddr_t indexT1 = vaddr >> 22;       // first-level table index.
     vaddr_t indexT2 = vaddr << 10 >> 22; // second-level table index.
 
-    KASSERT(pagetable != NULL);
+    /* the pagetable should not be null */
+    if (pagetable == NULL) {
+        return EINVAL;
+    }
 
     if (pagetable[indexT1] == NULL) {
         /* second-level table does not exist, therefore page table entry does not exist. */
         *entry = 0;
-        return;
+        return 0;
     }
     if (pagetable[indexT1][indexT2] == 0) {
         /* page table entry does not exist. */
         *entry = 0;
-        return;
+        return 0;
     }
     /* save entry in return address. */
     *entry = pagetable[indexT1][indexT2];
 
-    return;
+    return 0;
 }
 
 /*
- * updates the dirty bit in order to toggle readonly and read/write entries.
+ * flips the dirty bit off in order to change read/write entries to readonly.
  */
-void pagetable_update(paddr_t **pagetable, vaddr_t reg_vbase, size_t reg_npages) {
+int pagetable_update(paddr_t **pagetable, vaddr_t reg_vbase, size_t reg_npages) {
     vaddr_t indexT1;
     vaddr_t indexT2;
     unsigned int i;
     vaddr_t reg_vend = reg_vbase + reg_npages*PAGE_SIZE;
 
-    KASSERT(pagetable != NULL);
-    KASSERT(reg_vend <= MIPS_KSEG0);
+    /* the pagetable should not be null. */
+    if (pagetable == NULL) {
+        return EINVAL;
+    }
+
+    /* the end of the region should be within the user memory space. */
+    if (reg_vend > MIPS_KSEG0) {
+        return EINVAL;
+    }
 
     for (i = reg_vbase; i < reg_vend; i = i + PAGE_SIZE) {
         indexT1 = i >> 22;
@@ -85,13 +99,13 @@ void pagetable_update(paddr_t **pagetable, vaddr_t reg_vbase, size_t reg_npages)
             i = i + TABLE_SIZE*PAGE_SIZE - i%(TABLE_SIZE*PAGE_SIZE) - PAGE_SIZE;
         } else {
             indexT2 = i << 10 >> 22;
-            /* if there is an entry toggle its dirty bit. */
+            /* if there is an entry flip its dirty bit off. */
             if (pagetable[indexT1][indexT2] != 0) {
-                pagetable[indexT1][indexT2] ^= TLBLO_DIRTY;
+                pagetable[indexT1][indexT2] &= ~(paddr_t)TLBLO_DIRTY;
             }
         }
     }
-    return;
+    return 0;
 }
 
 void vm_bootstrap(void)
@@ -140,15 +154,25 @@ int vm_fault(int faulttype, vaddr_t faultaddress) {
 		return EFAULT;
 	}
 
-    KASSERT(as->pagetable != NULL);
-    KASSERT(as->regions != NULL);
+    /* the pagetable should not be null. */
+    if (as->pagetable == NULL) {
+        return EFAULT;
+    }
 
-    /* Check if faultaddress exists in page table and store entry*/
+    /* the valid regions list should not be null */
+    if (as->regions == NULL) {
+        return EFAULT;
+    }
+
+    /* Check if faultaddress exists in pagetable and store entryLo. */
     paddr_t entryLo;
-    pagetable_lookup(as->pagetable, faultaddress, &entryLo);
+    int result = pagetable_lookup(as->pagetable, faultaddress, &entryLo);
+    if (result != 0) {
+        return result;
+    }
+
     if (entryLo != 0) {
-        /* load the TLB. */
-        /* Disable interrupts on this CPU while frobbing the TLB. */
+        /* An entry was found, disable interrupts on this CPU and load the TLB. */
 	    int spl = splhigh();
         tlb_random(faultaddress & TLBHI_VPAGE, entryLo);
         splx(spl);
@@ -171,29 +195,30 @@ int vm_fault(int faulttype, vaddr_t faultaddress) {
     if (cur_reg != NULL) {
         paddr_t paddr;
 
-        /* allocate a new frame for the faultaddress */
+        /* allocate a new frame for the faultaddress. */
         paddr = (paddr_t)alloc_kpages(1);
         if (paddr == 0) {
             return ENOMEM;
         }
 
-        /* zero fill the frame */
+        /* zero fill the frame. */
         bzero((void *)paddr, (size_t)PAGE_SIZE);
 
-        /* add permissions to pagetable entry */
+        /* convert to physical address and add permissions to entryLo. */
         entryLo = KVADDR_TO_PADDR(paddr) | TLBLO_VALID;
+
+        /* add the dirty bit if fault address is in a writable region. */
         if ((cur_reg->permissions & RF_W) != 0) {
             entryLo |= TLBLO_DIRTY;
         }
 
         /* place etnry in pagetable. */
-        int result = pagetable_insert(as->pagetable, faultaddress, entryLo);
+        result = pagetable_insert(as->pagetable, faultaddress, entryLo);
         if (result != 0) {
             return result;
         }
 
-        /* load the TLB. */
-        /* Disable interrupts on this CPU while frobbing the TLB. */
+        /* Disable interrupts on this CPU and load the TLB. */
 	    int spl = splhigh();
         tlb_random(faultaddress & TLBHI_VPAGE, entryLo);
 		splx(spl);
@@ -201,6 +226,7 @@ int vm_fault(int faulttype, vaddr_t faultaddress) {
         return 0;
     }
 
+    /* faultaddress in invalid region exit with EFAULT. */
     return EFAULT;
 }
 
