@@ -1,0 +1,1174 @@
+Session: 19T1
+Assignment: asst3  Submission ID: 129
+
+
+Your submission has been marked. + /usr/bin/less -m /import/adams/3/z5152065/cs3231.asst3.mrk
+
+!!section banner
+   #     #####   #####
+  ##    #     # #     #
+ # #          # #     #
+   #     #####   ######
+   #    #             #
+   #    #       #     #
+ #####  #######  #####
+
+Long, Joshua Charles                    129
+Wright, William Benjamin                129
+
+Submissions:-
+
+S 0     Wed Apr 24 14:07:11 2019        129 all asst3 -7:-9
+S 0+    Wed Apr 24 14:07:11 2019        129 all asst3 -7:-10
+
+Tue May 07 08:08:24 2019                ## oud14.orchestra.cse.unsw.EDU.AU ##
+!!section listing
+Cloning into 'src'...
+
+-------------------------------
+- Recent commits:
+-------------------------------
+commit 101722f6c26665a6cffd6017e325af6dd8157eb5
+Author: Joshua Long <z5152065@student.unsw.edu.au>
+Date:   Wed Apr 24 13:55:56 2019 +1000
+
+    addition of comments/error conditions
+
+commit 9d16261d4c28ac1e632430be91faeccc28a90cd0
+Author: Joshua Long <z5152065@student.unsw.edu.au>
+Date:   Tue Apr 23 17:57:27 2019 +1000
+
+    new addrspace frame data copy
+
+commit 0b05f5bc165f60ec0f3e09482d9caf4d9e349916
+Author: Will <willwright90@gmail.com>
+Date:   Tue Apr 23 16:55:18 2019 +1000
+
+    Some work on as_copy
+
+commit fc693f7c2ec677a812845d286a7bbcb245efdbe0
+Author: Joshua Long <z5152065@student.unsw.edu.au>
+Date:   Tue Apr 23 14:43:43 2019 +1000
+
+    indexT2 fix
+
+commit eea1501caca56afb7c01cf344e248211f96270ee
+Author: Joshua Long <z5152065@student.unsw.edu.au>
+Date:   Tue Apr 23 14:31:13 2019 +1000
+
+    removal of alloc_upage and free_upage
+
+commit cefc455f3a48b96aebf067922da0499601561884
+Author: Joshua Long <z5152065@student.unsw.edu.au>
+Date:   Mon Apr 22 15:50:19 2019 +1000
+
+    slight modifications to vm_fault()
+-------------------------------
+
+diff --unidirectional-new-file -d -b -w -B -r -u -X /home/cs3231/assigns/asst3/diffex -U 999 /home/cs3231/assigns/asst3/src/kern/arch/mips/include/vm.h src/kern/arch/mips/include/vm.h
++++ src/kern/arch/mips/include/vm.h     2019-05-07 08:08:24.656185678 +1000
+@@ -1,141 +1,142 @@
+ /*
+  * Copyright (c) 2000, 2001, 2002, 2003, 2004, 2005, 2008, 2009
+  *     The President and Fellows of Harvard College.
+  *
+  * Redistribution and use in source and binary forms, with or without
+  * modification, are permitted provided that the following conditions
+  * are met:
+  * 1. Redistributions of source code must retain the above copyright
+  *    notice, this list of conditions and the following disclaimer.
+  * 2. Redistributions in binary form must reproduce the above copyright
+  *    notice, this list of conditions and the following disclaimer in the
+  *    documentation and/or other materials provided with the distribution.
+  * 3. Neither the name of the University nor the names of its contributors
+  *    may be used to endorse or promote products derived from this software
+  *    without specific prior written permission.
+  *
+  * THIS SOFTWARE IS PROVIDED BY THE UNIVERSITY AND CONTRIBUTORS ``AS IS'' AND
+  * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+  * ARE DISCLAIMED.  IN NO EVENT SHALL THE UNIVERSITY OR CONTRIBUTORS BE LIABLE
+  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+  * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+  * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+  * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+  * SUCH DAMAGE.
+  */
+
+ #ifndef _MIPS_VM_H_
+ #define _MIPS_VM_H_
+
+ /*
+  * Machine-dependent VM system definitions.
+  */
+
+ #define PAGE_SIZE  4096         /* size of VM page */
+ #define PAGE_FRAME 0xfffff000   /* mask for getting page number from addr */
++#define TABLE_SIZE   1024                /* number of entries at each page table level */
++#define STACK_NPAGES 16                          /* size of stack in number of pages. */
+
+ /*
+  * MIPS-I hardwired memory layout:
+  *    0xc0000000 - 0xffffffff   kseg2 (kernel, tlb-mapped)
+  *    0xa0000000 - 0xbfffffff   kseg1 (kernel, unmapped, uncached)
+  *    0x80000000 - 0x9fffffff   kseg0 (kernel, unmapped, cached)
+  *    0x00000000 - 0x7fffffff   kuseg (user, tlb-mapped)
+  *
+  * (mips32 is a little different)
+  */
+
+ #define MIPS_KUSEG  0x00000000
+ #define MIPS_KSEG0  0x80000000
+ #define MIPS_KSEG1  0xa0000000
+ #define MIPS_KSEG2  0xc0000000
+
+ /*
+  * The first 512 megs of physical space can be addressed in both kseg0 and
+  * kseg1. We use kseg0 for the kernel. This macro returns the kernel virtual
+  * address of a given physical address within that range. (We assume we're
+  * not using systems with more physical space than that anyway.)
+  *
+  * N.B. If you, say, call a function that returns a paddr or 0 on error,
+  * check the paddr for being 0 *before* you use this macro. While paddr 0
+  * is not legal for memory allocation or memory management (it holds
+  * exception handler code) when converted to a vaddr it's *not* NULL, *is*
+  * a valid address, and will make a *huge* mess if you scribble on it.
+  */
+
+ #define PADDR_TO_KVADDR(paddr) paddr_to_kvaddr(paddr)
+ static inline vaddr_t
+ paddr_to_kvaddr(paddr_t paddr){
+     return ((paddr) + MIPS_KSEG0);
+ }
+
+ #define KVADDR_TO_PADDR(vaddr) kvaddr_to_paddr(vaddr)
+ static inline paddr_t
+ kvaddr_to_paddr(vaddr_t vaddr){
+     return ((vaddr) - MIPS_KSEG0);
+ }
+
+
+ /*
+  * The top of user space. (Actually, the address immediately above the
+  * last valid user address.)
+  */
+ #define USERSPACETOP  MIPS_KSEG0
+
+ /*
+  * The starting value for the stack pointer at user level.  Because
+  * the stack is subtract-then-store, this can start as the next
+  * address after the stack area.
+  *
+  * We put the stack at the very top of user virtual memory because it
+  * grows downwards.
+  */
+ #define USERSTACK     USERSPACETOP
+
+ /*
+  * Interface to the low-level module that looks after the amount of
+  * physical memory we have.
+  *
+  * ram_getsize returns one past the highest valid physical
+  * address. (This value is page-aligned.)  The extant RAM ranges from
+  * physical address 0 up to but not including this address.
+  *
+  * ram_getfirstfree returns the lowest valid physical address. (It is
+  * also page-aligned.) Memory at this address and above is available
+  * for use during operation, and excludes the space the kernel is
+  * loaded into and memory that is grabbed in the very early stages of
+  * bootup. Memory below this address is already in use and should be
+  * reserved or otherwise not managed by the VM system. It should be
+  * called exactly once when the VM system initializes to take over
+  * management of physical memory.
+  *
+  * ram_stealmem can be used before ram_getsize is called to allocate
+  * memory that cannot be freed later. This is intended for use early
+  * in bootup before VM initialization is complete.
+  */
+
+ void ram_bootstrap(void);
+ paddr_t ram_stealmem(unsigned long npages);
+ paddr_t ram_getsize(void);
+ paddr_t ram_getfirstfree(void);
+
+ /*
+  * TLB shootdown bits.
+  *
+  * We'll take up to 16 invalidations before just flushing the whole TLB.
+  */
+
+ struct tlbshootdown {
+        /*
+         * Change this to what you need for your VM design.
+         */
+        int ts_placeholder;
+ };
+
+ #define TLBSHOOTDOWN_MAX 16
+
+
+ #endif /* _MIPS_VM_H_ */
+diff --unidirectional-new-file -d -b -w -B -r -u -X /home/cs3231/assigns/asst3/diffex -U 999 /home/cs3231/assigns/asst3/src/kern/include/addrspace.h src/kern/include/addrspace.h
++++ src/kern/include/addrspace.h        2019-05-07 08:08:24.660185688 +1000
+@@ -1,132 +1,147 @@
+ /*
+  * Copyright (c) 2000, 2001, 2002, 2003, 2004, 2005, 2008, 2009
+  *     The President and Fellows of Harvard College.
+  *
+  * Redistribution and use in source and binary forms, with or without
+  * modification, are permitted provided that the following conditions
+  * are met:
+  * 1. Redistributions of source code must retain the above copyright
+  *    notice, this list of conditions and the following disclaimer.
+  * 2. Redistributions in binary form must reproduce the above copyright
+  *    notice, this list of conditions and the following disclaimer in the
+  *    documentation and/or other materials provided with the distribution.
+  * 3. Neither the name of the University nor the names of its contributors
+  *    may be used to endorse or promote products derived from this software
+  *    without specific prior written permission.
+  *
+  * THIS SOFTWARE IS PROVIDED BY THE UNIVERSITY AND CONTRIBUTORS ``AS IS'' AND
+  * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+  * ARE DISCLAIMED.  IN NO EVENT SHALL THE UNIVERSITY OR CONTRIBUTORS BE LIABLE
+  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+  * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+  * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+  * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+  * SUCH DAMAGE.
+  */
+
+ #ifndef _ADDRSPACE_H_
+ #define _ADDRSPACE_H_
+
+ /*
++ * Flags for region->permissions
++ */
++#define RF_R   0x4 /* region is readable */
++#define RF_W   0x2 /* region is writable */
++#define RF_X   0x1 /* region is executable */
++
++/*
+  * Address space structure and operations.
+  */
+
+
+ #include <vm.h>
+ #include "opt-dumbvm.h"
+
+ struct vnode;
+
+
+ /*
+  * Address space - data structure associated with the virtual memory
+  * space of a process.
+  *
+  * You write this.
+  */
+
++struct region {
++        struct region *reg_next; // next region in linked list.
++        vaddr_t reg_vbase;       // virtual memory base location of region.
++        size_t reg_npages;       // size of region in number of pages.
++        int permissions;         // region permissions (read/write/exec).
++};
++
+ struct addrspace {
+ #if OPT_DUMBVM
+         vaddr_t as_vbase1;
+         paddr_t as_pbase1;
+         size_t as_npages1;
+         vaddr_t as_vbase2;
+         paddr_t as_pbase2;
+         size_t as_npages2;
+         paddr_t as_stackpbase;
+ #else
++        struct region *regions; // linked list of regions
++        paddr_t **pagetable;    // 2-level pagetable structure
+ #endif
+ };
+
+ /*
+  * Functions in addrspace.c:
+  *
+  *    as_create - create a new empty address space. You need to make
+  *                sure this gets called in all the right places. You
+  *                may find you want to change the argument list. May
+  *                return NULL on out-of-memory error.
+  *
+  *    as_copy   - create a new address space that is an exact copy of
+  *                an old one. Probably calls as_create to get a new
+  *                empty address space and fill it in, but that's up to
+  *                you.
+  *
+  *    as_activate - make curproc's address space the one currently
+  *                "seen" by the processor.
+  *
+  *    as_deactivate - unload curproc's address space so it isn't
+  *                currently "seen" by the processor. This is used to
+  *                avoid potentially "seeing" it while it's being
+  *                destroyed.
+  *
+  *    as_destroy - dispose of an address space. You may need to change
+  *                the way this works if implementing user-level threads.
+  *
+  *    as_define_region - set up a region of memory within the address
+  *                space.
+  *
+  *    as_prepare_load - this is called before actually loading from an
+  *                executable into the address space.
+  *
+  *    as_complete_load - this is called when loading from an executable
+  *                is complete.
+  *
+  *    as_define_stack - set up the stack region in the address space.
+  *                (Normally called *after* as_complete_load().) Hands
+  *                back the initial stack pointer for the new process.
+  *
+  * Note that when using dumbvm, addrspace.c is not used and these
+  * functions are found in dumbvm.c.
+  */
+
+ struct addrspace *as_create(void);
+ int               as_copy(struct addrspace *src, struct addrspace **ret);
+ void              as_activate(void);
+ void              as_deactivate(void);
+ void              as_destroy(struct addrspace *);
+
+ int               as_define_region(struct addrspace *as,
+                                    vaddr_t vaddr, size_t sz,
+                                    int readable,
+                                    int writeable,
+                                    int executable);
+ int               as_prepare_load(struct addrspace *as);
+ int               as_complete_load(struct addrspace *as);
+ int               as_define_stack(struct addrspace *as, vaddr_t *initstackptr);
+
+
+ /*
+  * Functions in loadelf.c
+  *    load_elf - load an ELF user program executable into the current
+  *               address space. Returns the entry point (initial PC)
+  *               in the space pointed to by ENTRYPOINT.
+  */
+
+ int load_elf(struct vnode *v, vaddr_t *entrypoint);
+
+
+ #endif /* _ADDRSPACE_H_ */
+diff --unidirectional-new-file -d -b -w -B -r -u -X /home/cs3231/assigns/asst3/diffex -U 999 /home/cs3231/assigns/asst3/src/kern/include/vm.h src/kern/include/vm.h
++++ src/kern/include/vm.h       2019-05-07 08:08:24.664185699 +1000
+@@ -1,62 +1,70 @@
+ /*
+  * Copyright (c) 2000, 2001, 2002, 2003, 2004, 2005, 2008, 2009
+  *     The President and Fellows of Harvard College.
+  *
+  * Redistribution and use in source and binary forms, with or without
+  * modification, are permitted provided that the following conditions
+  * are met:
+  * 1. Redistributions of source code must retain the above copyright
+  *    notice, this list of conditions and the following disclaimer.
+  * 2. Redistributions in binary form must reproduce the above copyright
+  *    notice, this list of conditions and the following disclaimer in the
+  *    documentation and/or other materials provided with the distribution.
+  * 3. Neither the name of the University nor the names of its contributors
+  *    may be used to endorse or promote products derived from this software
+  *    without specific prior written permission.
+  *
+  * THIS SOFTWARE IS PROVIDED BY THE UNIVERSITY AND CONTRIBUTORS ``AS IS'' AND
+  * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+  * ARE DISCLAIMED.  IN NO EVENT SHALL THE UNIVERSITY OR CONTRIBUTORS BE LIABLE
+  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+  * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+  * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+  * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+  * SUCH DAMAGE.
+  */
+
+ #ifndef _VM_H_
+ #define _VM_H_
+
+ /*
+  * VM system-related definitions.
+  *
+  * You'll probably want to add stuff here.
+  */
+
+
+ #include <machine/vm.h>
+
+ /* Fault-type arguments to vm_fault() */
+ #define VM_FAULT_READ        0    /* A read was attempted */
+ #define VM_FAULT_WRITE       1    /* A write was attempted */
+ #define VM_FAULT_READONLY    2    /* A write to a readonly page was attempted*/
+
++/* insert a page table entry that maps to the provided frame number. */
+ ^
+ + ========================== +
+ + Good abstraction and docs. +
+ + ========================== +
++int pagetable_insert(paddr_t **pagetable, vaddr_t vaddr, paddr_t frame_no);
++
++/* lookup page table at entry vaddr and return frame number. Return null if non exists. */
++int pagetable_lookup(paddr_t **pagetable, vaddr_t vaddr, paddr_t *frame_no);
++
++/* flips the dirty bit off in order to change read/write entries to readonly. */
++int pagetable_update(paddr_t **pagetable, vaddr_t reg_vbase, size_t reg_npages);
+
+ /* Initialization function */
+ void vm_bootstrap(void);
+
+ /* Fault handling function called by trap code */
+ int vm_fault(int faulttype, vaddr_t faultaddress);
+
+ /* Allocate/free kernel heap pages (called by kmalloc/kfree) */
+ vaddr_t alloc_kpages(unsigned npages);
+ void free_kpages(vaddr_t addr);
+
+ /* TLB shootdown handling called from interprocessor_interrupt */
+ void vm_tlbshootdown(const struct tlbshootdown *);
+
+
+ #endif /* _VM_H_ */
+diff --unidirectional-new-file -d -b -w -B -r -u -X /home/cs3231/assigns/asst3/diffex -U 999 /home/cs3231/assigns/asst3/src/kern/vm/addrspace.c src/kern/vm/addrspace.c
++++ src/kern/vm/addrspace.c     2019-05-07 08:08:24.668185709 +1000
+@@ -1,190 +1,382 @@
+ /*
+  * Copyright (c) 2000, 2001, 2002, 2003, 2004, 2005, 2008, 2009
+  *     The President and Fellows of Harvard College.
+  *
+  * Redistribution and use in source and binary forms, with or without
+  * modification, are permitted provided that the following conditions
+  * are met:
+  * 1. Redistributions of source code must retain the above copyright
+  *    notice, this list of conditions and the following disclaimer.
+  * 2. Redistributions in binary form must reproduce the above copyright
+  *    notice, this list of conditions and the following disclaimer in the
+  *    documentation and/or other materials provided with the distribution.
+  * 3. Neither the name of the University nor the names of its contributors
+  *    may be used to endorse or promote products derived from this software
+  *    without specific prior written permission.
+  *
+  * THIS SOFTWARE IS PROVIDED BY THE UNIVERSITY AND CONTRIBUTORS ``AS IS'' AND
+  * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+  * ARE DISCLAIMED.  IN NO EVENT SHALL THE UNIVERSITY OR CONTRIBUTORS BE LIABLE
+  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+  * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+  * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+  * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+  * SUCH DAMAGE.
+  */
+
+ #include <types.h>
+ #include <kern/errno.h>
+ #include <lib.h>
+ #include <spl.h>
+ #include <spinlock.h>
+ #include <current.h>
+ #include <mips/tlb.h>
+ #include <addrspace.h>
+ #include <vm.h>
+ #include <proc.h>
+
+ /*
+  * Note! If OPT_DUMBVM is set, as is the case until you start the VM
+  * assignment, this file is not compiled or linked or in any way
+  * used. The cheesy hack versions in dumbvm.c are used instead.
+  *
+  * UNSW: If you use ASST3 config as required, then this file forms
+  * part of the VM subsystem.
+  *
+  */
+
++/* Called by a new process, sets up structures necessary to represent new process. */
+ struct addrspace *
+ as_create(void)
+ {
+        struct addrspace *as;
+
+        as = kmalloc(sizeof(struct addrspace));
+        if (as == NULL) {
+                return NULL;
+        }
+
++       /* Initialise the regions linked list to be empty. */
++       as->regions = NULL;
++
++       /* Initialise the 2-level pagetable by allocating memory for the 1st level table. */
++       as->pagetable = (paddr_t **)alloc_kpages(1);
++       if (as->pagetable == NULL) {
++               kfree(as);
++               return NULL;
++       }
++
++       /* zero fill the 1st-level table. */
++       unsigned int i;
++       for (i = 0; i < TABLE_SIZE; i++) {
++               as->pagetable[i] = NULL;
++       }
+
+        return as;
+ }
+
+ int
+ as_copy(struct addrspace *old, struct addrspace **ret)
+ {
++       // kprintf("========== AS COPY CALLED\n");
+        struct addrspace *newas;
+
+        newas = as_create();
+        if (newas==NULL) {
+                return ENOMEM;
+        }
+
++       struct region *cur_reg;
++       int permissions, readable, writeable, executable, result;
++       int i, j;
++       size_t memsize;
++       vaddr_t vaddr;
++       cur_reg = old->regions;
+
++       /* copy the permissions and region structure */
++       while (cur_reg != NULL) {
++               permissions = cur_reg->permissions;
++               readable    = permissions & RF_R;
++               writeable   = permissions & RF_W;
++               executable  = permissions & RF_X;
++               memsize = cur_reg->reg_npages * PAGE_SIZE;
++               vaddr = cur_reg->reg_vbase;
++               result = as_define_region(newas, vaddr, memsize, readable, writeable, executable);
++               if (result != 0) {
++                       return result;
++               }
++
++               cur_reg = cur_reg->reg_next;
++       }
++
++       paddr_t paddr, entryLo;
++       for (i = 0; i < TABLE_SIZE; i++) {
++               if (old->pagetable[i] != NULL) {
++                       newas->pagetable[i] = (paddr_t *)alloc_kpages(1);
++                       if (newas->pagetable[i] == NULL) {
++                               return ENOMEM;
++                       }
++                       for (j = 0; j < TABLE_SIZE; j++) {
++                               if (old->pagetable[i][j] != 0) {
++                                       /* allocate a new frame for the copied entry. */
++                                       paddr = (paddr_t)alloc_kpages(1);
++                                       if (paddr == 0) {
++                                               return ENOMEM;
++                                       }
++                                       /* copy data from old frame to new frame. */
++                                       memmove((void *)paddr, (const void *)(PADDR_TO_KVADDR(old->pagetable[i][j]) & PAGE_FRAME), (size_t)PAGE_SIZE);
++                                       /* copy permissions from old entry to new pagetable entry */
++                                       entryLo = KVADDR_TO_PADDR(paddr) | TLBLO_VALID;
++                                       if ((old->pagetable[i][j] & TLBLO_DIRTY) != 0) {
++                                               entryLo |= TLBLO_DIRTY;
++                                       }
++                                       /* insert new entry into new address space pagetable. */
++                                       newas->pagetable[i][j] = entryLo;
++                               } else {
++                                       newas->pagetable[i][j] = 0;
++                               }
++                       }
++               } else {
++                       newas->pagetable[i] = NULL;
++               }
++       }
++
++       // kprintf("========== AS COPY FINISHED\n");
++       /* copy the necessary page data to the destination */
+
+        *ret = newas;
+        return 0;
+ }
+
+ void
+ as_destroy(struct addrspace *as)
+ {
+        /*
+         * Clean up as needed.
+         */
++       unsigned int i, j;
++       struct region *cur_reg;
++       struct region *next_reg;
++
++       /* free all 2nd level tables in page table */
++       for (i = 0; i < TABLE_SIZE; i++) {
++               if (as->pagetable[i] != NULL) {
++                       for (j = 0; j < TABLE_SIZE; j++) {
++                               if (as->pagetable[i][j] != 0) {
++                                       //kprintf("free address 0x%08x, virtual address 0x%08x\n", as->pagetable[i][j] & PAGE_FRAME, i<<22 | j<<12);
++                                       free_kpages((paddr_t)(PADDR_TO_KVADDR(as->pagetable[i][j]) & PAGE_FRAME));
++                               }
++                       }
++                       /* free 2nd level table in pagetable. */
++                       free_kpages((vaddr_t)as->pagetable[i]);
++               }
++       }
++       /* free 1st level table in pagetable. */
++       free_kpages((vaddr_t)as->pagetable);
++
++       /* free all regions in linked list. */
++       cur_reg = as->regions;
++       while(cur_reg != NULL) {
++               next_reg = cur_reg->reg_next;
++               kfree(cur_reg);
++               cur_reg = next_reg;
++       }
+
++       /* free the address space struct. */
+        kfree(as);
++       return;
+ }
+
++void as_activate(void) {
++       int i, spl;
+        struct addrspace *as;
+
+        as = proc_getas();
+        if (as == NULL) {
+                return;
+        }
+
++       /* Disable interrupts on this CPU while frobbing the TLB. */
++       spl = splhigh();
++
++       for (i=0; i<NUM_TLB; i++) {
++               tlb_write(TLBHI_INVALID(i), TLBLO_INVALID(), i);
+ }
+
++       splx(spl);
++}
++
++void as_deactivate(void) {
++       int i, spl;
++       struct addrspace *as;
++
++       as = proc_getas();
++       if (as == NULL) {
++               return;
++       }
++
++       /* Disable interrupts on this CPU while frobbing the TLB. */
++       spl = splhigh();
++
++       for (i=0; i<NUM_TLB; i++) {
++               tlb_write(TLBHI_INVALID(i), TLBLO_INVALID(), i);
++       }
++
++       splx(spl);
+ }
+
+ /*
+  * Set up a segment at virtual address VADDR of size MEMSIZE. The
+  * segment in memory extends from VADDR up to (but not including)
+  * VADDR+MEMSIZE.
+  *
+  * The READABLE, WRITEABLE, and EXECUTABLE flags are set if read,
+  * write, or execute permission should be set on the segment. At the
+  * moment, these are ignored. When you write the VM system, you may
+  * want to implement them.
+  */
+ int
+ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t memsize,
+                 int readable, int writeable, int executable)
+ {
++       struct region *cur_reg;
++       struct region *new_reg;
++       size_t npages;
+
++       /* address space should not be null */
++       if (as == NULL) {
++               return EINVAL;
++       }
++
++       /* a region should not have no permissions. */
++       if ((readable | writeable | executable) == 0) {
++               return EINVAL;
++       }
++
++       /* a region must be defined in user space. */
++       if (vaddr + memsize > MIPS_KSEG0) {
++               return EINVAL;
++       }
++
++       /* find the base location in virtual memory for the region. */
++       memsize += vaddr & ~(vaddr_t)PAGE_FRAME;
++       vaddr &= PAGE_FRAME;
++
++       /* find the number of pages required for the region. */
++       memsize = (memsize + PAGE_SIZE - 1) & PAGE_FRAME;
++       npages = memsize / PAGE_SIZE;
++
++       /* allocate memory for new region. */
++       new_reg = kmalloc(sizeof(struct region));
++       if (new_reg == NULL) {
++               return ENOMEM;
++       }
++
++       /* save new region attributes. */
++       new_reg->reg_npages = npages;
++       new_reg->reg_vbase = vaddr;
++       new_reg->reg_next = NULL;
++       new_reg->permissions = readable | writeable | executable;
++
++       /* if the regions list is null make this new region the head of the linked list. */
++       if (as->regions == NULL) {
++               as->regions = new_reg;
++       } else {
++               /* otherwise add the new region to the end of the list. */
++               cur_reg = as->regions;
++               while(cur_reg->reg_next != NULL) {
++                       cur_reg = cur_reg->reg_next;
++               }
++               cur_reg->reg_next = new_reg;
++       }
++
++       return 0;
+ }
+
+ int
+ as_prepare_load(struct addrspace *as)
+ {
++       /* address space should not be null */
++       if (as == NULL ) {
++               return EINVAL;
++       }
++
++       struct region *cur_reg;
++       cur_reg = as->regions;
++
++       // set read / write permissions for all regions
++       // shifting the old permissions to the left by 3 bits
+           ^
+           + ==================== +
+           + Creative. Very nice. +
+           + ==================== +
++       while (cur_reg != NULL) {
++               cur_reg->permissions = cur_reg->permissions << 3 | RF_R | RF_W;
++               cur_reg = cur_reg->reg_next;
++       }
+
+        return 0;
+ }
+
+ int
+ as_complete_load(struct addrspace *as)
+ {
++       /* address space should not be null */
++       if (as == NULL ) {
++               return EINVAL;
++       }
++
++       int i, spl;
++       struct region *cur_reg;
++       cur_reg = as->regions;
++
++       // reset write permissions to what they were originally
++       // by shifting the original right permissions to the right
++       // ANDing with 0b00000111 to ensure only the relevant bits are set for tidyness.
++       while (cur_reg != NULL) {
++               cur_reg->permissions = cur_reg->permissions >> 3 & 0x7;
++               /* update all readonly regions in the pagetable. */
++               if ((cur_reg->permissions & RF_W) == 0) {
++                       int result = pagetable_update(as->pagetable, cur_reg->reg_vbase, cur_reg->reg_npages);
++                       if (result != 0) {
++                               return result;
++                       }
++               }
++               cur_reg = cur_reg->reg_next;
++       }
++
++       /* flush the TLB to remove any read/write entries that should be readonly. */
++       spl = splhigh();
++       for (i=0; i<NUM_TLB; i++) {
++               tlb_write(TLBHI_INVALID(i), TLBLO_INVALID(), i);
++       }
++       splx(spl);
+
+        return 0;
+ }
+
+ int
+ as_define_stack(struct addrspace *as, vaddr_t *stackptr)
+ {
+        /* Initial user-level stack pointer */
+        *stackptr = USERSTACK;
+
++       /* define the size of the stack. */
++       size_t memsize = STACK_NPAGES*PAGE_SIZE;
++
++       /* define the base virtual memory location of the stack. */
++       vaddr_t vaddr = USERSTACK - memsize;
++
++       /* setup permissions for stack: read/write, not executable. */
++       int readable = RF_R;
++       int writable = RF_W;
++       int executable = 0;
++
++       /* define the stack region within the address space. */
++       int result = as_define_region(as, vaddr, memsize, readable, writable, executable);
++       if (result != 0) {
++               return result;
++       }
++
+        return 0;
+ }
+
+diff --unidirectional-new-file -d -b -w -B -r -u -X /home/cs3231/assigns/asst3/diffex -U 999 /home/cs3231/assigns/asst3/src/kern/vm/vm.c src/kern/vm/vm.c
++++ src/kern/vm/vm.c    2019-05-07 08:08:24.668185709 +1000
+@@ -1,41 +1,244 @@
+ #include <types.h>
+ #include <kern/errno.h>
+ #include <lib.h>
+ #include <thread.h>
+ #include <addrspace.h>
+ #include <vm.h>
+ #include <machine/tlb.h>
++#include <spl.h>
++
++#include <proc.h>
++#include <current.h>
+
+ /* Place your page table functions here */
+
++/*
++ * insert a pagetable entry that maps to the provided entryLo.
++ */
++int pagetable_insert(paddr_t **pagetable, vaddr_t vaddr, paddr_t entryLo) {
++    unsigned int i;
++    /* retrieve the first and second level page table indexes from vaddr. */
++    vaddr_t indexT1 = vaddr >> 22;
++    vaddr_t indexT2 = vaddr << 10 >> 22;
++
++    /* the pagetable should not be null */
++    if (pagetable == NULL) {
++        return EINVAL;
++    }
++
++    /* if the second level pagetable does not yet exist, allocate it. */
++    if (pagetable[indexT1] == NULL) {
++        pagetable[indexT1] = (paddr_t *)alloc_kpages(1);
++        if (pagetable[indexT1] == NULL) {
++            return ENOMEM;
++        }
++        /* fill the second level pagetable with empty slots. */
++        for (i = 0; i < TABLE_SIZE; i++) {
++            pagetable[indexT1][i] = 0;
++        }
++    }
++
++    /* store entryLo in the pagetable. */
++    pagetable[indexT1][indexT2] = entryLo;
++
++    return 0;
++}
++
++/*
++ * lookup pagetable at location vaddr and return entry. Return null if non exists.
++ */
++int pagetable_lookup(paddr_t **pagetable, vaddr_t vaddr, paddr_t *entry) {
++    /* retrieve the first and second level page table indexes from vaddr. */
++    vaddr_t indexT1 = vaddr >> 22;       // first-level table index.
++    vaddr_t indexT2 = vaddr << 10 >> 22; // second-level table index.
++
++    /* the pagetable should not be null */
++    if (pagetable == NULL) {
++        return EINVAL;
++    }
++
++    if (pagetable[indexT1] == NULL) {
++        /* second-level table does not exist, therefore page table entry does not exist. */
++        *entry = 0;
++        return 0;
++    }
++    if (pagetable[indexT1][indexT2] == 0) {
++        /* page table entry does not exist. */
++        *entry = 0;
++        return 0;
++    }
++    /* save entry in return address. */
++    *entry = pagetable[indexT1][indexT2];
++
++    return 0;
++}
++
++/*
++ * flips the dirty bit off in order to change read/write entries to readonly.
++ */
++int pagetable_update(paddr_t **pagetable, vaddr_t reg_vbase, size_t reg_npages) {
++    vaddr_t indexT1;
++    vaddr_t indexT2;
++    unsigned int i;
++    vaddr_t reg_vend = reg_vbase + reg_npages*PAGE_SIZE;
++
++    /* the pagetable should not be null. */
++    if (pagetable == NULL) {
++        return EINVAL;
++    }
++
++    /* the end of the region should be within the user memory space. */
++    if (reg_vend > MIPS_KSEG0) {
++        return EINVAL;
++    }
++
++    for (i = reg_vbase; i < reg_vend; i = i + PAGE_SIZE) {
++        indexT1 = i >> 22;
++        /* if 2nd-level table does not exist simply skip to next 1st-level entry. */
++        if (pagetable[indexT1] == NULL) {
++            i = i + TABLE_SIZE*PAGE_SIZE - i%(TABLE_SIZE*PAGE_SIZE) - PAGE_SIZE;
++        } else {
++            indexT2 = i << 10 >> 22;
++            /* if there is an entry flip its dirty bit off. */
++            if (pagetable[indexT1][indexT2] != 0) {
++                pagetable[indexT1][indexT2] &= ~(paddr_t)TLBLO_DIRTY;
++            }
++        }
++    }
++    return 0;
++}
+
+ void vm_bootstrap(void)
+ {
+     /* Initialise VM sub-system.  You probably want to initialise your
+        frame table here as well.
+     */
++    /* Not required to initialise frame table for this years submission. */
+ }
+
++/*
++ * called when faultaddress was not found in TLB.
++ * retrieves virtual memory mapping from pagetable and loads the TLB.
++ * if virtual memory mapping does not exist in pagetable it is retrieved from disk.
++ * returns EFAULT if memory reference is invalid.
++ */
++int vm_fault(int faulttype, vaddr_t faultaddress) {
+
++    switch (faulttype) {
++           case VM_FAULT_READONLY:
++               /* Attempt to violate READONLY memory permission, return EFAULT. */
++               return EFAULT;
++           case VM_FAULT_READ:
++           case VM_FAULT_WRITE:
++               break;
++           default:
++               return EINVAL;
++       }
++
++    if (curproc == NULL) {
++               /*
++                * No process. This is probably a kernel fault early
++                * in boot. Return EFAULT so as to panic instead of
++                * getting into an infinite faulting loop.
++                */
++               return EFAULT;
++       }
++
++    struct addrspace *as;
++    as = proc_getas();
++       if (as == NULL) {
++               /*
++                * No address space set up. This is probably also a
++                * kernel fault early in boot.
++                */
++               return EFAULT;
++       }
+
++    /* the pagetable should not be null. */
++    if (as->pagetable == NULL) {
++        return EFAULT;
++    }
++
++    /* the valid regions list should not be null */
++    if (as->regions == NULL) {
++        return EFAULT;
++    }
++
++    /* Check if faultaddress exists in pagetable and store entryLo. */
++    paddr_t entryLo;
++    int result = pagetable_lookup(as->pagetable, faultaddress, &entryLo);
++    if (result != 0) {
++        return result;
++    }
++
++    if (entryLo != 0) {
++        /* An entry was found, disable interrupts on this CPU and load the TLB. */
++           int spl = splhigh();
++        tlb_random(faultaddress & TLBHI_VPAGE, entryLo);
++        splx(spl);
++
++        return 0;
++    }
++
++    /* check to see if the faultaddress lies within a valid region. */
++    struct region *cur_reg;
++    cur_reg = as->regions;
++    while (cur_reg != NULL) {
++        /* break if faultaddress is in current region. */
++        if  (faultaddress >= cur_reg->reg_vbase && faultaddress <
++                    cur_reg->reg_vbase + cur_reg->reg_npages*PAGE_SIZE) {
++            break;
++        }
++        cur_reg = cur_reg->reg_next;
++    }
++
++    if (cur_reg != NULL) {
++        paddr_t paddr;
++
++        /* allocate a new frame for the faultaddress. */
++        paddr = (paddr_t)alloc_kpages(1);
++        if (paddr == 0) {
++            return ENOMEM;
++        }
++
++        /* zero fill the frame. */
++        bzero((void *)paddr, (size_t)PAGE_SIZE);
++
++        /* convert to physical address and add permissions to entryLo. */
++        entryLo = KVADDR_TO_PADDR(paddr) | TLBLO_VALID;
++
++        /* add the dirty bit if fault address is in a writable region. */
++        if ((cur_reg->permissions & RF_W) != 0) {
++            entryLo |= TLBLO_DIRTY;
++        }
++
++        /* place etnry in pagetable. */
++        result = pagetable_insert(as->pagetable, faultaddress, entryLo);
++        if (result != 0) {
++            return result;
++        }
++
++        /* Disable interrupts on this CPU and load the TLB. */
++           int spl = splhigh();
++        tlb_random(faultaddress & TLBHI_VPAGE, entryLo);
++               splx(spl);
++
++        return 0;
++    }
++
++    /* faultaddress in invalid region exit with EFAULT. */
+     return EFAULT;
+ }
+
+ /*
+  *
+  * SMP-specific functions.  Unused in our configuration.
+  */
+
+ void
+ vm_tlbshootdown(const struct tlbshootdown *ts)
+ {
+        (void)ts;
+        panic("vm tried to do tlb shootdown?!\n");
+ }
+
+Starting.
+Top-level configure...
+Checking for <err.h>... yes
+Checking for ntohll()...no
+Generating defs.mk.
+Configuration ASST3
+Generating files... opt-dumbvm.h opt-hangman.h opt-net.h opt-netfs.h opt-noasserts.h opt-semfs.h opt-sfs.h opt-unsw.h files.mk Makefile autoconf.h autoconf.c
+Configuration in ../compile/ASST3 done
+Remember to make depend
+Installing test code source
+Building kernel
+Running bmake depend...
+Running bmake...
+Running bmake install...
+Building user-space
+!!section tests
+** Test 1: Regions: Code only
+--------------------------------
+** Test passed
+--------------------------------
+** Test 2: Regions: Code + stack
+--------------------------------
+** Test passed
+--------------------------------
+** Test 3: Regions: Multiple regions
+--------------------------------
+** Test passed
+--------------------------------
+** Test 4: Regions: Read-only text. Should fault
+--------------------------------
+** Test passed
+--------------------------------
+** Test 5: Page Table: Simple C
+--------------------------------
+** Test passed
+--------------------------------
+** Test 6: Page Table: Large C Test (huge)
+--------------------------------
+** Test passed
+--------------------------------
+** Test 7: Page Table: Fork Test
+--------------------------------
+** Test passed
+--------------------------------
+** Test 8: Page Table: Big Fork Test
+--------------------------------
+** Test passed
+--------------------------------
+** Test 9: Page Table: Lazy allocation (triplehuge)
+--------------------------------
+** Test passed
+--------------------------------
+** Test 10: Page Table: as_destroy doesnt leak
+--------------------------------
+** Test passed
+--------------------------------
+
+--------------------------------
+--------------------------------
+
+--------------------------------
+--------------------------------
+!!section assess
+
+!!perftab       ** PERFORMANCE ANALYSIS **
+
+Test  1 (2)     Regions: Code only   ..  ..  ..  ..  ..  ..  !!PASSed
+Test  2 (2)     Regions: Code + stack .  ..  ..  ..  ..  ..  !!PASSed
+Test  3 (2)     Regions: Multiple regions .  ..  ..  ..  ..  !!PASSed
+Test  4 (2)     Regions: Read-only text. Should fault .  ..  !!PASSed
+Test  5 (2)     Page Table: Simple C ..  ..  ..  ..  ..  ..  !!PASSed
+Test  6 (2)     Page Table: Large C Test (huge)  ..  ..  ..  !!PASSed
+Test  7 (2)     Page Table: Fork Test .  ..  ..  ..  ..  ..  !!PASSed
+Test  8 (2)     Page Table: Big Fork Test .  ..  ..  ..  ..  !!PASSed
+Test  9 (2)     Page Table: Lazy allocation (triplehuge) ..  !!PASSed
+Test 10 (2)     Page Table: as_destroy doesnt leak   ..  ..  !!PASSed
+
+!!perfmark      ** TOTAL PERFORMANCE MARK:    20/20
+
+!!marktab       **  MARKER'S  ASSESSMENT  **
+
+             Performance and Correctness  (10)  10
+
+
+                                ^
++ ==================================================================== +
++ For how high quality this assignment was I'm impressed that you got  +
++ it in so early.                                                      +
++ ==================================================================== +
+
+!!earlybonus    ** EARLY BONUS (10% of awarded mark)  3.0
+!!finalmark     **  FINAL  ASSIGNMENT  MARK:    30.0/30
+
+Long, Joshua Charles                    129
+Wright, William Benjamin                129
+
+
+Marked by z5180332 on Sat May 18 10:38:05 2019
+
